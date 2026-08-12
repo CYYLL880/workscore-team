@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Modal, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Modal } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { showAlert, showConfirm } from '../lib/alert';
 
 // 主题色变量
 const COLORS = {
@@ -41,10 +42,7 @@ function CartScreen({ navigation }) {
   // 清空购物车（带确认）
   const handleClear = () => {
     if (cart.length === 0) return;
-    Alert.alert('确认清空', '确定要清空查看栏中的所有工步吗？', [
-      { text: '取消', style: 'cancel' },
-      { text: '清空', style: 'destructive', onPress: () => dispatch({ type: 'CLEAR_CART' }) },
-    ]);
+    showConfirm('确认清空', '确定要清空查看栏中的所有工步吗？', () => dispatch({ type: 'CLEAR_CART' }));
   };
 
   // 删除单项
@@ -102,7 +100,7 @@ function CartScreen({ navigation }) {
   // 生成文本，跳转 Output 界面
   const handleGenerate = () => {
     if (cart.length === 0) {
-      Alert.alert('提示', '查看栏为空，请先添加工步');
+      showAlert('提示', '查看栏为空，请先添加工步');
       return;
     }
     navigation.navigate('Output');

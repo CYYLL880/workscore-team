@@ -8,10 +8,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   StatusBar,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { showAlert } from '../lib/alert';
 
 export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
@@ -24,11 +24,11 @@ export default function LoginScreen() {
   const handleSubmit = async () => {
     const emp = empNo.trim();
     if (!emp || !password.trim()) {
-      Alert.alert('提示', '请输入工号和密码');
+      showAlert('提示', '请输入工号和密码');
       return;
     }
     if (mode === 'register' && !name.trim()) {
-      Alert.alert('提示', '请输入姓名');
+      showAlert('提示', '请输入姓名');
       return;
     }
 
@@ -39,13 +39,13 @@ export default function LoginScreen() {
           ? await signIn(emp, password)
           : await signUp(emp, password, name.trim());
       if (error) {
-        Alert.alert(
+        showAlert(
           mode === 'login' ? '登录失败' : '注册失败',
           error.message
         );
       }
     } catch (e) {
-      Alert.alert('错误', e.message);
+      showAlert('错误', e.message);
     } finally {
       setLoading(false);
     }

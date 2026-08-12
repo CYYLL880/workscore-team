@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Modal, Platform } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { showAlert, showConfirm } from '../lib/alert';
 
 const COLORS = {
   primary: '#0f172a',
@@ -41,17 +42,6 @@ function CustomizeScreen({ navigation }) {
 
   const selCategory = categories.find(c => c.id === selCategoryId);
 
-  const confirm = (msg, onConfirm) => {
-    if (Platform.OS === 'web') {
-      if (window.confirm(msg)) onConfirm();
-    } else {
-      Alert.alert('确认', msg, [
-        { text: '取消', style: 'cancel' },
-        { text: '确认', style: 'destructive', onPress: onConfirm },
-      ]);
-    }
-  };
-
   // === 第一层：工种列表 ===
   const renderCategoryList = () => (
     <View>
@@ -59,7 +49,7 @@ function CustomizeScreen({ navigation }) {
         <Text style={styles.tipText}>点击工种查看工步，可增删改所有属性</Text>
         <TouchableOpacity
           style={styles.resetBtn}
-          onPress={() => confirm('重新加载将丢弃未保存的本地修改，确定吗？', () => {
+          onPress={() => showConfirm('确认', '重新加载将丢弃未保存的本地修改，确定吗？', () => {
             reload();
           })}
         >
@@ -174,7 +164,7 @@ function CustomizeScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.deleteCatBtn}
-          onPress={() => confirm(`确定删除工种"${selCategory.short_name}"及其所有工步吗？`, () => {
+          onPress={() => showConfirm('确认', `确定删除工种"${selCategory.short_name}"及其所有工步吗？`, () => {
             dispatch({ type: 'DELETE_CATEGORY', payload: { id: selCategory.id } });
             setLevel('list');
             setSelCategoryId(null);
@@ -206,7 +196,7 @@ function CustomizeScreen({ navigation }) {
       setLevel('steps');
     };
     const handleDelete = () => {
-      confirm('确定删除该工步吗？', () => {
+      showConfirm('确认', '确定删除该工步吗？', () => {
         dispatch({ type: 'DELETE_STEP', payload: { categoryId: selCategoryId, seq: selStepSeq } });
         setLevel('steps');
       });
@@ -377,11 +367,7 @@ function CustomizeScreen({ navigation }) {
                     await createCategory({ name: newCatName.trim(), short_name: newCatShort.trim() });
                     setAddCatModal(false);
                   } catch (e) {
-                    if (Platform.OS === 'web') {
-                      window.alert('创建工种失败：' + (e.message || e));
-                    } else {
-                      Alert.alert('错误', '创建工种失败：' + (e.message || e));
-                    }
+                    showAlert('错误', '创建工种失败：' + (e.message || e));
                   }
                 }}
               >

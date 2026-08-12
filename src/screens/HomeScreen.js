@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ScrollView, Alert, Modal, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ScrollView, Modal, Platform } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { formatScore } from '../utils/outputGenerator';
+import { showAlert, showConfirm } from '../lib/alert';
 
 // 统一主题色 - 现代化简洁配色
 const COLORS = {
@@ -42,11 +43,7 @@ function HomeScreen({ navigation }) {
       const newId = await createWorkGroup({ train: '', isLinxiu: false });
       navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
     } catch (e) {
-      if (Platform.OS === 'web') {
-        window.alert('创建作业组失败：' + (e.message || e));
-      } else {
-        Alert.alert('错误', '创建作业组失败：' + (e.message || e));
-      }
+      showAlert('错误', '创建作业组失败：' + (e.message || e));
     }
   };
 
@@ -57,24 +54,13 @@ function HomeScreen({ navigation }) {
   // 删除作业组（跨平台确认）
   const handleDeleteGroup = (groupId) => {
     const doDelete = () => dispatch({ type: 'DELETE_WORK_GROUP', payload: { groupId } });
-    if (Platform.OS === 'web') {
-      if (window.confirm('确定要删除该作业组吗？')) doDelete();
-    } else {
-      Alert.alert('确认删除', '确定要删除该作业组吗？', [
-        { text: '取消', style: 'cancel' },
-        { text: '删除', style: 'destructive', onPress: doDelete },
-      ]);
-    }
+    showConfirm('确认删除', '确定要删除该作业组吗？', doDelete);
   };
 
   // 生成文字
   const handleGenerate = () => {
     if (workGroups.length === 0 || getTotalItemCount() === 0) {
-      if (Platform.OS === 'web') {
-        window.alert('请先添加作业组和工步');
-      } else {
-        Alert.alert('提示', '请先添加作业组和工步');
-      }
+      showAlert('提示', '请先添加作业组和工步');
       return;
     }
     navigation.navigate('Output');
@@ -85,18 +71,10 @@ function HomeScreen({ navigation }) {
     if (record.workGroups && record.workGroups.length > 0) {
       try {
         await restoreWorkGroups(record.workGroups);
-        if (Platform.OS === 'web') {
-          window.alert('历史记录已复用');
-        } else {
-          Alert.alert('提示', '历史记录已复用');
-        }
+        showAlert('提示', '历史记录已复用');
         setActiveTab('groups');
       } catch (e) {
-        if (Platform.OS === 'web') {
-          window.alert('复用失败：' + (e.message || e));
-        } else {
-          Alert.alert('错误', '复用失败：' + (e.message || e));
-        }
+        showAlert('错误', '复用失败：' + (e.message || e));
       }
     }
   };
@@ -122,11 +100,7 @@ function HomeScreen({ navigation }) {
         dispatch({ type: 'ENTER_EXCLUDE_MODE', payload: seqs });
         pendingExcludeNav.current = true;
       } catch (e) {
-        if (Platform.OS === 'web') {
-          window.alert('复用失败：' + (e.message || e));
-        } else {
-          Alert.alert('错误', '复用失败：' + (e.message || e));
-        }
+        showAlert('错误', '复用失败：' + (e.message || e));
       }
     }
   };
@@ -142,14 +116,7 @@ function HomeScreen({ navigation }) {
   // 删除历史记录
   const onDeleteHistory = (recordId) => {
     const doDelete = () => dispatch({ type: 'DELETE_HISTORY', payload: { id: recordId } });
-    if (Platform.OS === 'web') {
-      if (window.confirm('确定要删除该历史记录吗？')) doDelete();
-    } else {
-      Alert.alert('确认删除', '确定要删除该历史记录吗？', [
-        { text: '取消', style: 'cancel' },
-        { text: '删除', style: 'destructive', onPress: doDelete },
-      ]);
-    }
+    showConfirm('确认删除', '确定要删除该历史记录吗？', doDelete);
   };
 
   // 渲染作业组卡片
@@ -365,11 +332,7 @@ function HomeScreen({ navigation }) {
                     setPwdModal(false);
                     navigation.navigate('Customize');
                   } else {
-                    if (Platform.OS === 'web') {
-                      window.alert('密码错误');
-                    } else {
-                      Alert.alert('提示', '密码错误');
-                    }
+                    showAlert('提示', '密码错误');
                   }
                 }}
               >

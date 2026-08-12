@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Share, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Share, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useApp } from '../context/AppContext';
 import { generateOutput, formatScore } from '../utils/outputGenerator';
+import { showAlert, showConfirm } from '../lib/alert';
 
 // 统一主题色 - 现代化简洁配色
 const COLORS = {
@@ -43,17 +44,9 @@ function OutputScreen({ navigation }) {
   const handleCopy = async () => {
     try {
       await Clipboard.setStringAsync(outputText);
-      if (Platform.OS === 'web') {
-        window.alert('已复制到剪贴板');
-      } else {
-        Alert.alert('提示', '已复制到剪贴板');
-      }
+      showAlert('提示', '已复制到剪贴板');
     } catch (e) {
-      if (Platform.OS === 'web') {
-        window.alert('复制失败');
-      } else {
-        Alert.alert('提示', '复制失败');
-      }
+      showAlert('提示', '复制失败');
     }
   };
 
@@ -64,11 +57,7 @@ function OutputScreen({ navigation }) {
         title: '工分文本',
       });
     } catch (e) {
-      if (Platform.OS === 'web') {
-        window.alert('导出失败');
-      } else {
-        Alert.alert('提示', '导出失败');
-      }
+      showAlert('提示', '导出失败');
     }
   };
 
@@ -88,20 +77,7 @@ function OutputScreen({ navigation }) {
   };
 
   const handleComplete = () => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('完成后将保存到历史记录并清空所有作业组，确定吗？')) {
-        doComplete();
-      }
-    } else {
-      Alert.alert(
-        '确认完成',
-        '完成后将保存到历史记录并清空所有作业组，确定吗？',
-        [
-          { text: '取消', style: 'cancel' },
-          { text: '确认完成', style: 'destructive', onPress: doComplete },
-        ]
-      );
-    }
+    showConfirm('确认完成', '完成后将保存到历史记录并清空所有作业组，确定吗？', doComplete);
   };
 
   return (
