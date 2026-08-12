@@ -1,0 +1,79 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Expo
+.expo/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# 构建产物 / 临时文件
+*.b64
+b64_chunk_*.txt
+chunk_*.txt
+fn_chunk_*.js
+inject_fn.js
+gen_inject.js
+save_b64_chunks.js
+save_chunks.js
+gen_fn_chunks.js
+
+# 敏感信息（不提交到 GitHub）
+.env
+.env.local
+*.local
+
+# Android / iOS 构建产物
+android/
+ios/
+
+# 旧版部署脚本（团队版已切换到 Netlify）
+deploy-github.js
+upload-netlify-files.js
+upload-vercel-files.js
+
+# Claude / AI 配置
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# 临时数据
+sql_chunks.json
+supabase_data.b64
+supabase_init.b64
+
+# 旧版备份目录
+WorkScoreApp/
+
+# 原始数据 / 旧版 web 文件
+2026年电子组工分细则（07. 01）.xlsx
+webapp.html
+ui-design.html
+deploy/
+
+# SQL 临时文件（数据已导入 Supabase，无需在仓库中保留）
+supabase_data.sql
+supabase_init.sql
+
+# 一次性脚本（数据迁移已完成，无需保留）
+compare_work_scores.js
+create_test_user.js
+gen_data_sql.js
+import_to_supabase.js
+parse_data.py
+split_sql.js
+work_scores_new.json
+
+# 开发计划文档（内部使用，不公开）
+开发计划_团队版.md

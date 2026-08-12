@@ -1,0 +1,23 @@
+# Netlify 部署配置 - Expo Web 静态构建
+[build]
+  command = "npx expo export --platform web"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+  # Expo Web 构建相关
+  EXPO_USE_TYPESCRIPT = "false"
+
+# SPA 路由回退：所有路由返回 index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 安全头
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
