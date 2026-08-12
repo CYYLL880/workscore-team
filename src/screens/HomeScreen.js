@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ScrollView, Modal, Platform } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { formatScore } from '../utils/outputGenerator';
 import { showAlert, showConfirm } from '../lib/alert';
 
@@ -26,6 +27,7 @@ const COLORS = {
 
 function HomeScreen({ navigation }) {
   const { workGroups, dispatch, createWorkGroup, restoreWorkGroups, getTotalScore, getTotalItemCount, getGroupScore, history } = useApp();
+  const { isAdmin } = useAuth();
 
   const [activeTab, setActiveTab] = useState('groups');
 
@@ -206,13 +208,24 @@ function HomeScreen({ navigation }) {
           <Text style={styles.headerTitle}>工分统计</Text>
           <Text style={styles.headerSubtitle}>2026年电子组工分细则</Text>
         </View>
-        <TouchableOpacity
-          style={styles.gearBtn}
-          onPress={() => { setPwdInput(''); setPwdModal(true); }}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text style={styles.gearIcon}>⚙</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.adminBtn}
+              onPress={() => navigation.navigate('UserManagement')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.adminBtnText}>用户管理</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.gearBtn}
+            onPress={() => { setPwdInput(''); setPwdModal(true); }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.gearIcon}>⚙</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -364,6 +377,22 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(139,92,246,0.25)',
+    marginRight: 8,
+  },
+  adminBtnText: {
+    color: '#c4b5fd',
+    fontSize: 12,
+    fontWeight: '600',
   },
   gearBtn: {
     width: 40,
