@@ -239,13 +239,14 @@ export default function UserManagementScreen({ navigation }) {
       >
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>团队成员</Text>
-          <FlatList
-            data={users}
-            keyExtractor={item => item.id}
-            renderItem={renderUser}
-            scrollEnabled={false}
-            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          />
+          <View>
+            {users.map((item, index) => (
+              <View key={item.id}>
+                {renderUser({ item })}
+                {index < users.length - 1 && <View style={{ height: 10 }} />}
+              </View>
+            ))}
+          </View>
         </View>
         <View style={{ height: 60 }} />
       </ScrollView>

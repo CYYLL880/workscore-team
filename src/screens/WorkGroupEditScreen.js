@@ -334,25 +334,17 @@ function WorkGroupEditScreen({ navigation, route }) {
                 <Text style={styles.emptyText}>未找到匹配工步</Text>
               </View>
             ) : (
-              <FlatList
-                data={searchResults}
-                keyExtractor={item => String(item.seq)}
-                renderItem={renderSearchResult}
-                scrollEnabled={false}
-              />
+              <View>
+                {searchResults.map((item) => renderSearchResult({ item }))}
+              </View>
             )}
           </View>
         ) : (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>分类浏览（{categories.length}）</Text>
-            <FlatList
-              data={categories}
-              keyExtractor={item => String(item.id)}
-              renderItem={renderCategoryCard}
-              numColumns={2}
-              scrollEnabled={false}
-              columnWrapperStyle={styles.categoryRow}
-            />
+            <View style={styles.categoryGrid}>
+              {categories.map((item, index) => renderCategoryCard({ item, index }))}
+            </View>
           </View>
         )}
 
@@ -366,12 +358,9 @@ function WorkGroupEditScreen({ navigation, route }) {
               <Text style={styles.emptyText}>暂无工步</Text>
             </View>
           ) : (
-            <FlatList
-              data={group.items}
-              keyExtractor={item => String(item.seq)}
-              renderItem={renderItem}
-              scrollEnabled={false}
-            />
+            <View>
+              {group.items.map((item) => renderItem({ item }))}
+            </View>
           )}
         </View>
 
@@ -760,16 +749,17 @@ const styles = StyleSheet.create({
   },
 
   // 分类卡片
-  categoryRow: {
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
   categoryCard: {
-    flex: 1,
+    width: '48%',
     backgroundColor: COLORS.card,
     borderRadius: 14,
     padding: 16,
-    marginHorizontal: 6,
+    marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOpacity: 0.04,
