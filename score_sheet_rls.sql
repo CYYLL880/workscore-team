@@ -8,7 +8,7 @@ DROP POLICY IF EXISTS "work_groups_update_admin" ON work_groups;
 CREATE POLICY "work_groups_update_admin" ON work_groups
   FOR UPDATE USING (
     EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
+      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'super_admin')
     )
   );
 
@@ -17,7 +17,7 @@ DROP POLICY IF EXISTS "work_items_update_admin" ON work_items;
 CREATE POLICY "work_items_update_admin" ON work_items
   FOR UPDATE USING (
     EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
+      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'super_admin')
     )
   );
 
@@ -26,7 +26,7 @@ DROP POLICY IF EXISTS "work_groups_delete_admin" ON work_groups;
 CREATE POLICY "work_groups_delete_admin" ON work_groups
   FOR DELETE USING (
     EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
+      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'super_admin')
     )
   );
 
@@ -35,12 +35,12 @@ DROP POLICY IF EXISTS "work_items_delete_admin" ON work_items;
 CREATE POLICY "work_items_delete_admin" ON work_items
   FOR DELETE USING (
     EXISTS (
-      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role = 'admin'
+      SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('admin', 'super_admin')
     )
   );
 
--- 5. 确保 profiles 表已加入 realtime publication（工分总表实时订阅用户变更）
-ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+-- 5. profiles 表已在 realtime publication 中，无需重复添加
+-- ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
 
 -- 验证
 SELECT '工分总表 RLS 策略补充完成！' as message;

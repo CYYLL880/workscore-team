@@ -14,7 +14,14 @@ export function AuthProvider({ children }) {
       .select('*')
       .eq('id', userId)
       .single();
-    setProfile(data);
+    if (!data) {
+      // Profile 不存在（用户已被删除），自动登出
+      await supabase.auth.signOut();
+      setSession(null);
+      setProfile(null);
+    } else {
+      setProfile(data);
+    }
     setLoading(false);
   };
 
@@ -68,7 +75,8 @@ export function AuthProvider({ children }) {
     empNo: profile?.emp_no ?? null,
     name: profile?.name ?? null,
     role: profile?.role ?? 'user',
-    isAdmin: profile?.role === 'admin',
+    isAdmin: profile?.role === 'admin' || profile?.role === 'super_admin',
+    isSuperAdmin: profile?.role === 'super_admin',
     signIn,
     signUp,
     signOut,

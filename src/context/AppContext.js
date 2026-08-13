@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
+import { showAlert } from '../lib/alert';
 import {
   fetchCategoriesWithSteps,
   insertCategory as dbInsertCategory,
@@ -10,6 +11,7 @@ import {
   updateStep as dbUpdateStep,
   deleteStep as dbDeleteStep,
   fetchWorkGroups,
+  fetchGroupById as dbFetchGroupById,
   insertWorkGroup as dbInsertWorkGroup,
   updateWorkGroup as dbUpdateWorkGroup,
   deleteWorkGroup as dbDeleteWorkGroup,
@@ -224,6 +226,8 @@ export function AppProvider({ children }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const userIdRef = useRef(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // 加载 categories 和当前用户的 workGroups
   const loadAll = useCallback(async (uid) => {
@@ -334,17 +338,36 @@ export function AppProvider({ children }) {
   // 新建作业组：先插数据库拿 UUID，再 dispatch
   const createWorkGroup = useCallback(async (payload) => {
     if (!user) throw new Error('未登录');
-    const newId = await dbInsertWorkGroup(user.id, {
+    // 管理员可为他人创建作业组（targetUserId）
+    const targetUserId = payload?.targetUserId || user.id;
+    const newId = await dbInsertWorkGroup(targetUserId, {
       train: payload?.train || '',
       isLinxiu: payload?.isLinxiu || false,
       groupDate: payload?.groupDate || null,
     });
-    dispatch({
-      type: 'ADD_WORK_GROUP',
-      payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false, groupDate: payload?.groupDate || null },
-    });
+    // 仅当为自己创建时才加入本地 state（他人作业组由实时订阅刷新）
+    if (targetUserId === user.id) {
+      dispatch({
+        type: 'ADD_WORK_GROUP',
+        payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false, groupDate: payload?.groupDate || null },
+      });
+    }
     return newId;
   }, [user]);
+
+  // 管理员加载他人作业组到本地 state（编辑用）
+  const loadGroupById = useCallback(async (groupId) => {
+    const group = await dbFetchGroupById(groupId);
+    // 填充 categoryName
+    if (state.categories.length > 0) {
+      group.items = group.items.map(it => {
+        const cat = state.categories.find(c => c.id === it.categoryId);
+        return { ...it, categoryName: cat?.short_name || cat?.name || '' };
+      });
+    }
+    dispatch({ type: 'ADD_WORK_GROUP', payload: group });
+    return group;
+  }, [state.categories]);
 
   // 通用 dispatch 包装：乐观更新（先 dispatch，再异步写库）
   const appDispatch = useCallback((action) => {
@@ -367,6 +390,8 @@ export function AppProvider({ children }) {
           }
           case 'ADD_ITEM_TO_GROUP': {
             const { groupId, step, category } = action.payload;
+            const targetGroup = stateRef.current.workGroups.find(g => g.id === groupId);
+            const ownerUserId = targetGroup?.userId || user.id;
             const item = {
               seq: step.seq,
               name: step.name,
@@ -378,7 +403,7 @@ export function AppProvider({ children }) {
               bianhao: '',
               categoryId: category?.id ?? null,
             };
-            await dbInsertWorkItem(groupId, user.id, item);
+            await dbInsertWorkItem(groupId, ownerUserId, item);
             break;
           }
           case 'REMOVE_ITEM_FROM_GROUP': {
@@ -428,6 +453,30 @@ export function AppProvider({ children }) {
         }
       } catch (e) {
         console.warn('同步到 Supabase 失败:', action.type, e);
+        // 操作名称映射
+        const opNames = {
+          'UPDATE_WORK_GROUP': '更新作业组',
+          'DELETE_WORK_GROUP': '删除作业组',
+          'ADD_ITEM_TO_GROUP': '添加工步',
+          'REMOVE_ITEM_FROM_GROUP': '删除工步',
+          'UPDATE_GROUP_ITEM': '更新工步',
+          'CLEAR_ALL_GROUPS': '清空作业组',
+          'UPDATE_CATEGORY': '更新工种',
+          'DELETE_CATEGORY': '删除工种',
+          'ADD_STEP': '添加工步细则',
+          'UPDATE_STEP': '更新工步细则',
+          'DELETE_STEP': '删除工步细则',
+        };
+        const opName = opNames[action.type] || '操作';
+        const errMsg = e?.message || String(e);
+        // 网络错误 vs 权限错误 vs 其他
+        let hint = '请检查网络后重试';
+        if (errMsg.includes('JWT') || errMsg.includes('permission') || errMsg.includes('RLS') || errMsg.includes('policy')) {
+          hint = '权限不足，无法执行此操作';
+        } else if (errMsg.includes('network') || errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+          hint = '网络连接失败，请检查网络后重试';
+        }
+        showAlert('同步失败', `${opName}未保存到云端\n${hint}`);
       }
     });
   }, [user]);
@@ -476,6 +525,7 @@ export function AppProvider({ children }) {
     ...state,
     dispatch: appDispatch, // 替换为带同步的 dispatch
     createWorkGroup,
+    loadGroupById,
     createCategory,
     restoreWorkGroups,
     getGroupScore,

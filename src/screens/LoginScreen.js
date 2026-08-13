@@ -34,15 +34,26 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const { error } =
-        mode === 'login'
-          ? await signIn(emp, password)
-          : await signUp(emp, password, name.trim());
-      if (error) {
-        showAlert(
-          mode === 'login' ? '登录失败' : '注册失败',
-          error.message
-        );
+      if (mode === 'login') {
+        const { error } = await signIn(emp, password);
+        if (error) {
+          showAlert('登录失败', error.message);
+        }
+      } else {
+        // 注册
+        const { data, error } = await signUp(emp, password, name.trim());
+        if (error) {
+          showAlert('注册失败', error.message);
+        } else if (data?.session) {
+          // 已自动登录（Supabase 关闭了邮箱验证），AuthContext 会自动加载
+          showAlert('注册成功', `欢迎加入，${name.trim()}`);
+        } else {
+          // 未自动登录（邮箱验证开启）→ 切换到登录模式并预填工号
+          showAlert('注册成功', '请使用工号和密码登录');
+          setMode('login');
+          setPassword('');
+          setName('');
+        }
       }
     } catch (e) {
       showAlert('错误', e.message);
@@ -99,7 +110,12 @@ export default function LoginScreen() {
           activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.buttonText}>
+                {mode === 'login' ? '登录中...' : '注册中...'}
+              </Text>
+            </View>
           ) : (
             <Text style={styles.buttonText}>
               {mode === 'login' ? '登录' : '注册'}

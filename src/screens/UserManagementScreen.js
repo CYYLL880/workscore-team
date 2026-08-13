@@ -32,7 +32,7 @@ const COLORS = {
 };
 
 export default function UserManagementScreen({ navigation }) {
-  const { user, profile, isAdmin, signOut } = useAuth();
+  const { user, profile, isAdmin, isSuperAdmin, signOut } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -87,11 +87,22 @@ export default function UserManagementScreen({ navigation }) {
     }
     setSaving(true);
     try {
-      const { error } = await supabase
+      // 1. 更新姓名（admin 和 super_admin 都可以）
+      const { error: nameError } = await supabase
         .from('profiles')
-        .update({ name: editName.trim(), role: editRole })
+        .update({ name: editName.trim() })
         .eq('id', editUser.id);
-      if (error) throw error;
+      if (nameError) throw nameError;
+
+      // 2. 如果角色有变化且当前用户是 super_admin，调用 RPC 修改角色
+      if (editRole !== editUser.role && isSuperAdmin) {
+        const { error: roleError } = await supabase.rpc('super_admin_set_role', {
+          target_user_id: editUser.id,
+          new_role: editRole,
+        });
+        if (roleError) throw roleError;
+      }
+
       // 更新本地列表
       setUsers(prev => prev.map(u =>
         u.id === editUser.id ? { ...u, name: editName.trim(), role: editRole } : u
@@ -151,12 +162,21 @@ export default function UserManagementScreen({ navigation }) {
   // 渲染用户卡片
   const renderUser = ({ item }) => {
     const isSelf = item.id === user?.id;
+    const isSuperAdminUser = item.role === 'super_admin';
     const isAdminUser = item.role === 'admin';
+    // super_admin 用户不可编辑/删除（除非是自己且想改姓名）
+    const canEdit = !isSuperAdminUser;
+    const canDelete = !isSuperAdminUser && !isSelf;
     return (
       <View style={styles.userCard}>
         <View style={styles.userInfo}>
           <View style={styles.userHeader}>
             <Text style={styles.userName}>{item.name}</Text>
+            {isSuperAdminUser && (
+              <View style={styles.superAdminBadge}>
+                <Text style={styles.superAdminBadgeText}>最高管理员</Text>
+              </View>
+            )}
             {isAdminUser && (
               <View style={styles.adminBadge}>
                 <Text style={styles.adminBadgeText}>管理员</Text>
@@ -171,13 +191,22 @@ export default function UserManagementScreen({ navigation }) {
           <Text style={styles.userEmpNo}>工号 {item.emp_no}</Text>
         </View>
         <View style={styles.userActions}>
-          <TouchableOpacity
-            style={styles.editBtn}
-            onPress={() => openEdit(item)}
-          >
-            <Text style={styles.editBtnText}>编辑</Text>
-          </TouchableOpacity>
-          {!isSelf && (
+          {canEdit ? (
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => openEdit(item)}
+            >
+              <Text style={styles.editBtnText}>编辑</Text>
+            </TouchableOpacity>
+          ) : isSuperAdminUser && isSelf ? (
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => openEdit(item)}
+            >
+              <Text style={styles.editBtnText}>改名</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canDelete && (
             <TouchableOpacity
               style={styles.deleteBtn}
               onPress={() => openDelete(item)}
@@ -267,25 +296,33 @@ export default function UserManagementScreen({ navigation }) {
               placeholderTextColor={COLORS.textMuted}
             />
 
-            <Text style={styles.label}>角色</Text>
-            <View style={styles.roleSwitcher}>
-              <TouchableOpacity
-                style={[styles.roleBtn, editRole === 'user' && styles.roleBtnActive]}
-                onPress={() => setEditRole('user')}
-              >
-                <Text style={[styles.roleBtnText, editRole === 'user' && styles.roleBtnTextActive]}>
-                  普通用户
+            <Text style={styles.label}>角色{isSuperAdmin ? '' : '（仅最高管理员可修改）'}</Text>
+            {isSuperAdmin ? (
+              <View style={styles.roleSwitcher}>
+                <TouchableOpacity
+                  style={[styles.roleBtn, editRole === 'user' && styles.roleBtnActive]}
+                  onPress={() => setEditRole('user')}
+                >
+                  <Text style={[styles.roleBtnText, editRole === 'user' && styles.roleBtnTextActive]}>
+                    普通用户
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.roleBtn, editRole === 'admin' && styles.roleBtnAdminActive]}
+                  onPress={() => setEditRole('admin')}
+                >
+                  <Text style={[styles.roleBtnText, editRole === 'admin' && styles.roleBtnTextActive]}>
+                    管理员
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.roleDisplay}>
+                <Text style={styles.roleDisplayText}>
+                  {editUser?.role === 'admin' ? '管理员' : editUser?.role === 'super_admin' ? '最高管理员' : '普通用户'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleBtn, editRole === 'admin' && styles.roleBtnAdminActive]}
-                onPress={() => setEditRole('admin')}
-              >
-                <Text style={[styles.roleBtnText, editRole === 'admin' && styles.roleBtnTextActive]}>
-                  管理员
-                </Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditModal(false)}>
@@ -475,6 +512,31 @@ const styles = StyleSheet.create({
     color: COLORS.admin,
     fontSize: 11,
     fontWeight: '600',
+  },
+  superAdminBadge: {
+    backgroundColor: COLORS.danger + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  superAdminBadgeText: {
+    color: COLORS.danger,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  roleDisplay: {
+    height: 44,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  roleDisplayText: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
   },
   selfBadge: {
     backgroundColor: COLORS.accentBg,

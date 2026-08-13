@@ -1,356 +1,258 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ScrollView, Modal, Platform } from 'react-native';
-import { useApp } from '../context/AppContext';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { formatScore } from '../utils/outputGenerator';
+import { supabase } from '../lib/supabase';
 import { showAlert, showConfirm } from '../lib/alert';
 
-// 统一主题色 - 现代化简洁配色
 const COLORS = {
-  primary: '#0f172a',       // 深石板色（主色）
-  primaryLight: '#334155',  // 浅石板色
-  accent: '#3b82f6',        // 现代蓝（强调色）
-  accentLight: '#60a5fa',   // 浅蓝
-  accentBg: '#eff6ff',      // 蓝色背景
-  bg: '#f8fafc',            // 极浅灰背景
-  card: '#ffffff',          // 卡片白
-  text: '#0f172a',          // 主文字
-  textLight: '#64748b',     // 次要文字
-  textMuted: '#94a3b8',     // 弱化文字
-  border: '#e2e8f0',        // 边框
-  borderDash: '#cbd5e1',    // 虚线边框
-  success: '#10b981',       // 现代绿
-  danger: '#ef4444',        // 现代红
-  warning: '#f59e0b',       // 警告橙
-  linxiu: '#f97316',        // 临修橙
+  primary: '#0f172a',
+  primaryLight: '#334155',
+  accent: '#3b82f6',
+  accentBg: '#eff6ff',
+  bg: '#f8fafc',
+  card: '#ffffff',
+  text: '#0f172a',
+  textLight: '#64748b',
+  textMuted: '#94a3b8',
+  border: '#e2e8f0',
+  success: '#10b981',
+  danger: '#ef4444',
+  warning: '#f59e0b',
+  purple: '#8b5cf6',
+  purpleBg: '#f5f3ff',
+  orange: '#f97316',
+  orangeBg: '#fff7ed',
+  gray: '#64748b',
+  grayBg: '#f1f5f9',
+  dangerBg: '#fef2f2',
 };
 
 function HomeScreen({ navigation }) {
-  const { workGroups, dispatch, createWorkGroup, restoreWorkGroups, getTotalScore, getTotalItemCount, getGroupScore, history } = useApp();
-  const { isAdmin } = useAuth();
+  const { profile, isAdmin, signOut } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('groups');
-
-  // 密码验证
+  // 修改密码弹窗
   const [pwdModal, setPwdModal] = useState(false);
-  const [pwdInput, setPwdInput] = useState('');
-  const CUSTOMIZE_PWD = 'DZZGF20260630';
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [changingPwd, setChangingPwd] = useState(false);
 
-  // 排除模式跳转标志
-  const pendingExcludeNav = useRef(false);
-
-  // 新建作业组
-  const handleCreateGroup = async () => {
-    try {
-      const newId = await createWorkGroup({ train: '', isLinxiu: false });
-      navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
-    } catch (e) {
-      showAlert('错误', '创建作业组失败：' + (e.message || e));
-    }
-  };
-
-  const handleEditGroup = (groupId) => {
-    navigation.navigate('WorkGroupEdit', { groupId, isNew: false });
-  };
-
-  // 删除作业组（跨平台确认）
-  const handleDeleteGroup = (groupId) => {
-    const doDelete = () => dispatch({ type: 'DELETE_WORK_GROUP', payload: { groupId } });
-    showConfirm('确认删除', '确定要删除该作业组吗？', doDelete);
-  };
-
-  // 生成文字
-  const handleGenerate = () => {
-    if (workGroups.length === 0 || getTotalItemCount() === 0) {
-      showAlert('提示', '请先添加作业组和工步');
+  const handleChangePassword = async () => {
+    if (!newPwd || !confirmPwd) {
+      showAlert('提示', '请填写新密码');
       return;
     }
-    navigation.navigate('Output');
-  };
-
-  // 复用历史记录
-  const onReuse = async (record) => {
-    if (record.workGroups && record.workGroups.length > 0) {
-      try {
-        await restoreWorkGroups(record.workGroups);
-        showAlert('提示', '历史记录已复用');
-        setActiveTab('groups');
-      } catch (e) {
-        showAlert('错误', '复用失败：' + (e.message || e));
-      }
+    if (newPwd.length < 6) {
+      showAlert('提示', '新密码至少6位');
+      return;
     }
-  };
-
-  // 排除模式：恢复作业组结构（车号/临修）但工步为空，历史中的工步标注"已选"且不可选
-  const onExclude = async (record) => {
-    if (record.workGroups && record.workGroups.length > 0) {
-      try {
-        // 收集所有作业组的工步 seq（去重）
-        const seqs = [];
-        record.workGroups.forEach(g => {
-          (g.items || []).forEach(it => {
-            if (!seqs.includes(it.seq)) seqs.push(it.seq);
-          });
+    if (newPwd !== confirmPwd) {
+      showAlert('提示', '两次密码不一致');
+      return;
+    }
+    setChangingPwd(true);
+    try {
+      // 如填写了旧密码，先验证
+      if (oldPwd) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: profile?.emp_no + '@workscores.app',
+          password: oldPwd,
         });
-        // 恢复作业组结构但清空工步
-        const emptyGroups = record.workGroups.map(g => ({
-          train: g.train || '',
-          isLinxiu: g.isLinxiu || false,
-          items: [],
-        }));
-        await restoreWorkGroups(emptyGroups);
-        dispatch({ type: 'ENTER_EXCLUDE_MODE', payload: seqs });
-        pendingExcludeNav.current = true;
-      } catch (e) {
-        showAlert('错误', '复用失败：' + (e.message || e));
+        if (signInError) {
+          showAlert('错误', '旧密码不正确');
+          setChangingPwd(false);
+          return;
+        }
       }
+      const { error } = await supabase.auth.updateUser({ password: newPwd });
+      if (error) throw error;
+      showAlert('成功', '密码已修改');
+      closePwdModal();
+    } catch (e) {
+      showAlert('错误', e.message || '修改失败');
+    } finally {
+      setChangingPwd(false);
     }
   };
 
-  // 排除模式恢复后自动跳转到第一个作业组
-  useEffect(() => {
-    if (pendingExcludeNav.current && workGroups.length > 0) {
-      pendingExcludeNav.current = false;
-      navigation.navigate('WorkGroupEdit', { groupId: workGroups[0].id, isNew: false });
-    }
-  }, [workGroups, navigation]);
-
-  // 删除历史记录
-  const onDeleteHistory = (recordId) => {
-    const doDelete = () => dispatch({ type: 'DELETE_HISTORY', payload: { id: recordId } });
-    showConfirm('确认删除', '确定要删除该历史记录吗？', doDelete);
+  // 关闭密码弹窗并清空输入框
+  const closePwdModal = () => {
+    setPwdModal(false);
+    setOldPwd(''); setNewPwd(''); setConfirmPwd('');
   };
 
-  // 渲染作业组卡片
-  const renderGroupCard = ({ item }) => {
-    const score = getGroupScore(item);
-    const itemCount = item.items.length;
-    const trainLabel = item.train || '无车号';
-    return (
-      <View style={styles.groupCardWrap}>
-        <TouchableOpacity
-          style={styles.groupCard}
-          activeOpacity={0.9}
-          onPress={() => handleEditGroup(item.id)}
-        >
-          <View style={styles.groupCardTop}>
-            <View style={styles.groupTrainWrap}>
-              <Text style={styles.groupTrain} numberOfLines={1}>{trainLabel}</Text>
-            </View>
-            {item.isLinxiu && (
-              <View style={styles.linxiuBadge}>
-                <Text style={styles.linxiuBadgeText}>临修 ×1.5</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.groupCardBottom}>
-            <Text style={styles.groupItemCount}>
-              {itemCount > 0 ? `${itemCount} 个工步` : '暂无工步'}
-            </Text>
-            <Text style={styles.groupScore}>{formatScore(score)} 分</Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteGroupBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          onPress={() => handleDeleteGroup(item.id)}
-        >
-          <Text style={styles.deleteGroupText}>✕</Text>
-        </TouchableOpacity>
-      </View>
-    );
+  const handleLogout = () => {
+    showConfirm('确认登出', '确定要退出登录吗？', () => signOut());
   };
 
-  // 渲染历史记录项
-  const renderHistoryItem = ({ item }) => {
-    const date = new Date(item.date);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const trains = (item.workGroups || []).map(g => g.train).filter(Boolean).join('、');
-    const itemCount = (item.workGroups || []).reduce((s, g) => s + (g.items?.length || 0), 0);
-    return (
-      <View style={styles.historyItem}>
-        <View style={styles.historyDate}>
-          <Text style={styles.historyDay}>{day}</Text>
-          <Text style={styles.historyMonth}>{month}月</Text>
-        </View>
-        <View style={styles.historyInfo}>
-          <Text style={styles.historyTrain} numberOfLines={1}>
-            {trains || '无车号'}
-          </Text>
-          <Text style={styles.historyMeta}>
-            {itemCount} 项 · {item.totalScore || 0} 分
-          </Text>
-        </View>
-        <View style={styles.historyActions}>
-          <TouchableOpacity style={styles.reuseBtn} onPress={() => onReuse(item)}>
-            <Text style={styles.reuseBtnText}>复用</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.excludeBtn} onPress={() => onExclude(item)}>
-            <Text style={styles.excludeBtnText}>排除</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.historyDelBtn} onPress={() => onDeleteHistory(item.id)}>
-            <Text style={styles.historyDelText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+  // 按钮配置
+  const buttons = [
+    {
+      key: 'scoresheet',
+      title: '工分总表',
+      subtitle: '查看与编辑工分',
+      icon: '📊',
+      bgColor: COLORS.accentBg,
+      iconColor: COLORS.accent,
+      onPress: () => navigation.navigate('ScoreSheet'),
+      visible: true,
+    },
+    {
+      key: 'users',
+      title: '用户管理',
+      subtitle: '管理团队成员',
+      icon: '👥',
+      bgColor: COLORS.purpleBg,
+      iconColor: COLORS.purple,
+      onPress: () => navigation.navigate('UserManagement'),
+      visible: isAdmin,
+    },
+    {
+      key: 'customize',
+      title: '工分细则编辑',
+      subtitle: '工种与工步管理',
+      icon: '⚙',
+      bgColor: COLORS.orangeBg,
+      iconColor: COLORS.orange,
+      onPress: () => navigation.navigate('Customize'),
+      visible: isAdmin,
+    },
+    {
+      key: 'password',
+      title: '修改密码',
+      subtitle: '更改账户密码',
+      icon: '🔒',
+      bgColor: COLORS.grayBg,
+      iconColor: COLORS.gray,
+      onPress: () => { setOldPwd(''); setNewPwd(''); setConfirmPwd(''); setPwdModal(true); },
+      visible: true,
+    },
+    {
+      key: 'logout',
+      title: '登出',
+      subtitle: '退出当前账号',
+      icon: '↗',
+      bgColor: COLORS.dangerBg,
+      iconColor: COLORS.danger,
+      onPress: handleLogout,
+      visible: true,
+    },
+  ];
 
-  const totalScore = getTotalScore();
-  const totalCount = getTotalItemCount();
+  const visibleButtons = buttons.filter(b => b.visible);
 
   return (
     <View style={styles.container}>
-      {/* 顶部头部 */}
+      {/* 顶部头部 + 用户信息 */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>工分统计</Text>
-          <Text style={styles.headerSubtitle}>2026年电子组工分细则</Text>
-        </View>
-        <View style={styles.headerRight}>
-          {isAdmin && (
-            <TouchableOpacity
-              style={styles.adminBtn}
-              onPress={() => navigation.navigate('UserManagement')}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.adminBtnText}>用户管理</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.scoreSheetBtn}
-            onPress={() => navigation.navigate('ScoreSheet')}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.scoreSheetBtnText}>工分总表</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.gearBtn}
-            onPress={() => { setPwdInput(''); setPwdModal(true); }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.gearIcon}>⚙</Text>
-          </TouchableOpacity>
+        <Text style={styles.appTitle}>工分统计</Text>
+        <Text style={styles.appSubtitle}>2026年电子组工分细则</Text>
+
+        {/* 用户信息卡片 */}
+        <View style={styles.userCard}>
+          <View style={styles.userAvatar}>
+            <Text style={styles.userAvatarText}>
+              {(profile?.name || '?').charAt(0)}
+            </Text>
+          </View>
+          <View style={styles.userInfo}>
+            <View style={styles.userNameRow}>
+              <Text style={styles.userName}>{profile?.name || '未知'}</Text>
+              {isAdmin && (
+                <View style={styles.adminBadge}>
+                  <Text style={styles.adminBadgeText}>管理员</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.userEmpNo}>工号 {profile?.emp_no || '---'}</Text>
+          </View>
         </View>
       </View>
 
+      {/* 按钮网格 */}
       <ScrollView
         style={styles.body}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.bodyContent}
       >
-        {/* Tab切换栏 */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'groups' && styles.tabActive]}
-            onPress={() => setActiveTab('groups')}
-          >
-            <Text style={[styles.tabText, activeTab === 'groups' && styles.tabTextActive]}>
-              作业组 {workGroups.length > 0 ? workGroups.length : ''}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'history' && styles.tabActive]}
-            onPress={() => setActiveTab('history')}
-          >
-            <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>
-              历史记录 {history.length > 0 ? history.length : ''}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 作业组Tab */}
-        {activeTab === 'groups' && (
-          <View style={styles.section}>
-            {workGroups.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>暂无作业组</Text>
-              </View>
-            ) : (
-              <View>
-                {workGroups.map((item) => renderGroupCard({ item }))}
-              </View>
-            )}
-
-            {/* 新增作业组按钮 */}
+        <View style={styles.grid}>
+          {visibleButtons.map((btn) => (
             <TouchableOpacity
-              style={styles.addCard}
-              activeOpacity={0.9}
-              onPress={handleCreateGroup}
+              key={btn.key}
+              style={styles.gridItem}
+              activeOpacity={0.85}
+              onPress={btn.onPress}
             >
-              <Text style={styles.addIcon}>+</Text>
-              <Text style={styles.addText}>新增作业组</Text>
+              <View style={[styles.cardIcon, { backgroundColor: btn.bgColor }]}>
+                <Text style={[styles.cardIconText, { color: btn.iconColor }]}>
+                  {btn.icon}
+                </Text>
+              </View>
+              <Text style={styles.cardTitle}>{btn.title}</Text>
+              <Text style={styles.cardSubtitle}>{btn.subtitle}</Text>
             </TouchableOpacity>
-          </View>
-        )}
-
-        {/* 历史记录Tab */}
-        {activeTab === 'history' && (
-          <View style={styles.section}>
-            {history.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>暂无历史记录</Text>
-              </View>
-            ) : (
-              <View>
-                {history.map((item) => renderHistoryItem({ item }))}
-              </View>
-            )}
-          </View>
-        )}
-
-        <View style={{ height: 100 }} />
+          ))}
+        </View>
       </ScrollView>
 
-      {/* 底部浮动栏 */}
-      <View style={styles.bottomBar}>
-        <View style={styles.bottomInfo}>
-          <Text style={styles.bottomCount}>
-            {workGroups.length} 组 · {totalCount} 项
-          </Text>
-          <Text style={styles.bottomScore}>总工分 {formatScore(totalScore)}</Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.generateBtn, (workGroups.length === 0 || totalCount === 0) && styles.generateBtnDisabled]}
-          activeOpacity={0.9}
-          onPress={handleGenerate}
-        >
-          <Text style={styles.generateBtnText}>生成文字</Text>
-        </TouchableOpacity>
-      </View>
+      {/* 修改密码弹窗 */}
+      <Modal
+        visible={pwdModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closePwdModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>修改密码</Text>
 
-      {/* 密码验证弹窗 */}
-      <Modal visible={pwdModal} transparent animationType="fade" onRequestClose={() => setPwdModal(false)}>
-        <View style={styles.pwdOverlay}>
-          <View style={styles.pwdContent}>
-            <Text style={styles.pwdTitle}>请输入密码</Text>
+            <Text style={styles.modalLabel}>旧密码（选填，用于验证）</Text>
             <TextInput
-              style={styles.pwdInput}
-              value={pwdInput}
-              onChangeText={setPwdInput}
-              placeholder="输入管理密码"
-              placeholderTextColor="#94a3b8"
+              style={styles.modalInput}
+              value={oldPwd}
+              onChangeText={setOldPwd}
+              placeholder="输入旧密码"
+              placeholderTextColor={COLORS.textMuted}
               secureTextEntry
-              autoFocus
             />
-            <View style={styles.pwdActions}>
-              <TouchableOpacity style={styles.pwdCancelBtn} onPress={() => setPwdModal(false)}>
-                <Text style={styles.pwdCancelText}>取消</Text>
+
+            <Text style={styles.modalLabel}>新密码（至少6位）</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={newPwd}
+              onChangeText={setNewPwd}
+              placeholder="输入新密码"
+              placeholderTextColor={COLORS.textMuted}
+              secureTextEntry
+            />
+
+            <Text style={styles.modalLabel}>确认新密码</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={confirmPwd}
+              onChangeText={setConfirmPwd}
+              placeholder="再次输入新密码"
+              placeholderTextColor={COLORS.textMuted}
+              secureTextEntry
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={closePwdModal}
+              >
+                <Text style={styles.modalCancelText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.pwdConfirmBtn, !pwdInput && { opacity: 0.4 }]}
-                disabled={!pwdInput}
-                onPress={() => {
-                  if (pwdInput === CUSTOMIZE_PWD) {
-                    setPwdModal(false);
-                    navigation.navigate('Customize');
-                  } else {
-                    showAlert('提示', '密码错误');
-                  }
-                }}
+                style={[styles.modalBtn, styles.modalConfirm]}
+                disabled={changingPwd}
+                onPress={handleChangePassword}
               >
-                <Text style={styles.pwdConfirmText}>确认</Text>
+                {changingPwd ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>确认修改</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -366,441 +268,194 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
 
-  // 顶部头部
+  // 头部
   header: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 20,
     paddingTop: 52,
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingBottom: 24,
+    paddingHorizontal: 20,
   },
-  headerLeft: {
-    flex: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  adminBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(139,92,246,0.25)',
-    marginRight: 8,
-  },
-  adminBtnText: {
-    color: '#c4b5fd',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  scoreSheetBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(59,130,246,0.25)',
-    marginRight: 8,
-  },
-  scoreSheetBtnText: {
-    color: '#bfdbfe',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  gearBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gearIcon: {
+  appTitle: {
     color: '#ffffff',
-    fontSize: 20,
-  },
-
-  // 密码验证弹窗
-  pwdOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  pwdContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    width: '100%',
-    maxWidth: 400,
-  },
-  pwdTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginBottom: 16,
-  },
-  pwdInput: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  pwdActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  pwdCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  pwdCancelText: {
-    color: COLORS.textLight,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pwdConfirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: COLORS.accent,
-    borderRadius: 10,
-  },
-  pwdConfirmText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  headerSubtitle: {
-    color: 'rgba(255,255,255,0.6)',
+  appSubtitle: {
+    color: 'rgba(255,255,255,0.55)',
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
   },
 
+  // 用户信息卡片
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  userAvatarText: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  userName: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  adminBadge: {
+    backgroundColor: COLORS.purple,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  adminBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  userEmpNo: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+
+  // 按钮网格
   body: {
     flex: 1,
   },
-
-  // Tab切换栏
-  tabBar: {
+  bodyContent: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  grid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  gridItem: {
+    width: '48%',
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 4,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  tabActive: {
-    backgroundColor: COLORS.primary,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textLight,
-  },
-  tabTextActive: {
-    color: '#ffffff',
-  },
-
-  section: {
-    marginTop: 20,
-    paddingHorizontal: 16,
-  },
-
-  // 作业组卡片
-  groupCardWrap: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  groupCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  groupCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  groupTrainWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  groupTrainIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  groupTrain: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.text,
-    flex: 1,
-  },
-  linxiuBadge: {
-    backgroundColor: COLORS.linxiu,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  linxiuBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  groupCardBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  groupItemCount: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    fontWeight: '500',
-  },
-  groupScore: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.accent,
-  },
-  deleteGroupBtn: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#fee2e2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteGroupText: {
-    color: COLORS.danger,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  // 新增作业组按钮
-  addCard: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: COLORS.borderDash,
-    borderRadius: 14,
-    paddingVertical: 28,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    marginBottom: 12,
-  },
-  addIcon: {
-    fontSize: 28,
-    color: COLORS.borderDash,
-    fontWeight: '300',
-    lineHeight: 32,
-  },
-  addText: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    marginTop: 6,
-    fontWeight: '600',
-  },
-
-  // 历史记录项
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
   },
-  historyDate: {
-    width: 46,
-    height: 46,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
+  cardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-  },
-  historyDay: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#ffffff',
-    lineHeight: 19,
-  },
-  historyMonth: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
-  },
-  historyInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  historyTrain: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  historyMeta: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginTop: 3,
-    fontWeight: '500',
-  },
-  reuseBtn: {
-    backgroundColor: COLORS.accentBg,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  reuseBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.accent,
-  },
-  historyActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  excludeBtn: {
-    backgroundColor: '#fff7ed',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  excludeBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.linxiu,
-  },
-  historyDelBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#fee2e2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  historyDelText: {
-    color: COLORS.danger,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  // 空状态
-  emptyState: {
-    paddingVertical: 60,
-    alignItems: 'center',
-  },
-  emptyIcon: {
-    fontSize: 40,
     marginBottom: 12,
-    opacity: 0.4,
   },
-  emptyText: {
+  cardIconText: {
+    fontSize: 26,
+  },
+  cardTitle: {
     fontSize: 15,
-    color: COLORS.textLight,
     fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 4,
   },
-  emptySub: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginTop: 6,
+  cardSubtitle: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 
-  // 底部浮动栏
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.card,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -2 },
-    elevation: 8,
-  },
-  bottomInfo: {
+  // 修改密码弹窗
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  bottomCount: {
-    fontSize: 13,
+  modalContent: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalLabel: {
+    fontSize: 12,
     fontWeight: '600',
+    color: COLORS.textLight,
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '500',
     color: COLORS.text,
   },
-  bottomScore: {
-    fontSize: 13,
-    color: COLORS.accent,
-    marginTop: 3,
-    fontWeight: '700',
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
   },
-  generateBtn: {
-    backgroundColor: COLORS.success,
-    paddingHorizontal: 24,
+  modalBtn: {
+    flex: 1,
     paddingVertical: 13,
-    borderRadius: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  generateBtnDisabled: {
-    backgroundColor: COLORS.textMuted,
+  modalCancel: {
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  generateBtnText: {
+  modalConfirm: {
+    backgroundColor: COLORS.accent,
+  },
+  modalCancelText: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalConfirmText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',

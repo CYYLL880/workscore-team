@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal,
+  View, Text, TouchableOpacity, Pressable, StyleSheet, ScrollView, Modal,
   ActivityIndicator, RefreshControl, Platform, Dimensions,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +45,7 @@ const HEADER_HEIGHT = 44;
 
 function ScoreSheetScreen({ navigation }) {
   const { user, profile, isAdmin } = useAuth();
-  const { createWorkGroup } = useApp();
+  const { createWorkGroup, loadGroupById } = useApp();
 
   // 月份状态（普通用户锁定当月）
   const now = new Date();
@@ -98,17 +98,25 @@ function ScoreSheetScreen({ navigation }) {
   // 实时订阅
   useEffect(() => {
     const unsubscribe = subscribeMonthScoreData(year, month, () => {
-      // 防抖：500ms 内多次变更只重新加载一次
+      // 防抖：200ms 内多次变更只重新加载一次
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
       reloadTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) loadData(false);
-      }, 500);
+      }, 200);
     });
     return () => {
       unsubscribe();
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
     };
   }, [year, month, loadData]);
+
+  // 从编辑页返回时重新加载（删除/修改后即时刷新）
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (isMountedRef.current) loadData(false);
+    });
+    return unsubscribe;
+  }, [navigation, loadData]);
 
   // 月份切换（仅管理员）
   const canSwitchMonth = isAdmin;
@@ -161,16 +169,15 @@ function ScoreSheetScreen({ navigation }) {
     const cell = days[dateStr]?.[targetUserId];
     const groups = cell?.groups || [];
 
-    // 管理员编辑他人作业组：暂不支持（需WorkGroupEditScreen改造），提示
-    if (targetUserId !== user.id) {
-      showAlert('提示', '暂不支持编辑他人作业组，请到该用户账号下修改');
-      return;
-    }
-
     if (groups.length === 0) {
       // 当天无作业组，新建一个（使用用户点击的日期）
       try {
-        const newId = await createWorkGroup({ train: '', isLinxiu: false, groupDate: dateStr });
+        const newId = await createWorkGroup({
+          train: '',
+          isLinxiu: false,
+          groupDate: dateStr,
+          targetUserId: targetUserId !== user.id ? targetUserId : undefined,
+        });
         setDetailModal({ ...detailModal, visible: false });
         navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
       } catch (e) {
@@ -181,6 +188,15 @@ function ScoreSheetScreen({ navigation }) {
 
     if (groups.length === 1) {
       setDetailModal({ ...detailModal, visible: false });
+      // 管理员编辑他人作业组：先加载到本地 state
+      if (targetUserId !== user.id && isAdmin) {
+        try {
+          await loadGroupById(groups[0].id);
+        } catch (e) {
+          showAlert('错误', '加载作业组失败：' + (e.message || e));
+          return;
+        }
+      }
       navigation.navigate('WorkGroupEdit', { groupId: groups[0].id, isNew: false });
       return;
     }
@@ -190,14 +206,51 @@ function ScoreSheetScreen({ navigation }) {
   };
 
   // 选择具体作业组
-  const handlePickGroup = (groupId) => {
+  const handlePickGroup = async (groupId) => {
+    const targetUserId = groupPicker.userId;
     setGroupPicker({ visible: false, groups: [], dateStr: '', userId: '' });
     setDetailModal({ ...detailModal, visible: false });
+    // 管理员编辑他人作业组：先加载到本地 state
+    if (targetUserId !== user.id && isAdmin) {
+      try {
+        await loadGroupById(groupId);
+      } catch (e) {
+        showAlert('错误', '加载作业组失败：' + (e.message || e));
+        return;
+      }
+    }
     navigation.navigate('WorkGroupEdit', { groupId, isNew: false });
   };
 
-  // 管理员确认/撤销
-  const handleToggleConfirm = async (targetUserId, dateStr, currentlyConfirmed) => {
+  // 管理员确认/撤销（带影响范围二次确认）
+  const handleToggleConfirm = (targetUserId, dateStr, currentlyConfirmed) => {
+    const targetUser = users.find(u => u.id === targetUserId);
+    const userName = targetUser?.name || '用户';
+    const empNo = targetUser?.emp_no || '';
+    const cell = days[dateStr]?.[targetUserId];
+    const score = cell?.score || 0;
+    const groupCount = cell?.groups?.length || 0;
+    const stepCount = (cell?.groups || []).reduce((s, g) => s + (g.items?.length || 0), 0);
+
+    const scope = `${userName}（工号 ${empNo}）\n${dateStr} · ${groupCount}个作业组 · ${stepCount}个工步 · ${formatScore(score)}分`;
+
+    if (currentlyConfirmed) {
+      showConfirm(
+        '撤销确认',
+        `${scope}\n\n撤销后该用户可重新编辑当日工分`,
+        () => doToggleConfirm(targetUserId, dateStr, true, userName)
+      );
+    } else {
+      showConfirm(
+        '确认工分',
+        `${scope}\n\n确认后该用户当日工分将被锁定，仅管理员可修改`,
+        () => doToggleConfirm(targetUserId, dateStr, false, userName)
+      );
+    }
+  };
+
+  // 实际执行确认/撤销
+  const doToggleConfirm = async (targetUserId, dateStr, currentlyConfirmed, userName) => {
     try {
       if (currentlyConfirmed) {
         await unconfirmDay(targetUserId, dateStr);
@@ -222,6 +275,12 @@ function ScoreSheetScreen({ navigation }) {
         }
         return next;
       });
+      // 反馈
+      if (currentlyConfirmed) {
+        showAlert('已撤销', `${userName} ${dateStr} 的工分已撤销确认`);
+      } else {
+        showAlert('已确认', `${userName} ${dateStr} 的工分已确认锁定`);
+      }
     } catch (e) {
       showAlert('操作失败', e.message || '操作失败');
     }
@@ -302,19 +361,20 @@ function ScoreSheetScreen({ navigation }) {
     }
 
     return (
-      <TouchableOpacity
+      <Pressable
         key={dayNum}
         onPress={() => handleCellPress(userId, dayNum)}
-        style={[
+        style={({ pressed }) => [
           styles.cell,
           {
-            backgroundColor: bg,
+            backgroundColor: pressed
+              ? (hasData || cell ? COLORS.accent : '#f1f5f9')
+              : bg,
             borderColor,
             borderWidth: hasData || cell ? 1 : 0,
           },
           isToday && { borderRadius: 6, overflow: 'hidden' },
         ]}
-        activeOpacity={0.7}
       >
         {hasData ? (
           <View style={styles.cellInner}>
@@ -326,7 +386,7 @@ function ScoreSheetScreen({ navigation }) {
         ) : (
           <Text style={styles.cellEmpty}>-</Text>
         )}
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 
@@ -355,12 +415,15 @@ function ScoreSheetScreen({ navigation }) {
 
   // 详情 Modal 内容
   const renderDetailModal = () => {
-    const { userId, dateStr, dayNum, cell } = detailModal;
+    const { userId, dateStr, dayNum } = detailModal;
     if (!userId) return null;
+    // 从 days 实时状态读取，确保确认/撤销后按钮即时变化
+    const cell = days[dateStr]?.[userId];
     const targetUser = users.find(u => u.id === userId);
     const isSelf = userId === user.id;
     const confirmed = cell?.confirmed;
-    const canEdit = isSelf && (!confirmed || isAdmin);
+    // 管理员可编辑所有人；普通用户只能编辑自己未确认的
+    const canEdit = isAdmin || (isSelf && !confirmed);
 
     return (
       <Modal
@@ -560,6 +623,9 @@ function ScoreSheetScreen({ navigation }) {
   }
 
   const totalTableWidth = NAME_COL_WIDTH + daysInMonth * DAY_COL_WIDTH + TOTAL_COL_WIDTH;
+  // 当月是否完全无工分数据
+  const hasAnyData = Object.keys(days).length > 0 &&
+    Object.values(days).some(dayMap => Object.values(dayMap).some(c => c && c.score > 0));
 
   return (
     <View style={styles.container}>
@@ -624,6 +690,16 @@ function ScoreSheetScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* 空数据提示横幅 */}
+      {users.length > 0 && !hasAnyData && (
+        <View style={styles.emptyBanner}>
+          <Text style={styles.emptyBannerTitle}>本月暂无工分记录</Text>
+          <Text style={styles.emptyBannerHint}>
+            点击表格中对应日期单元格即可开始添加作业组
+          </Text>
+        </View>
+      )}
+
       {/* 表格 */}
       <ScrollView
         style={styles.tableScroll}
@@ -676,7 +752,8 @@ function ScoreSheetScreen({ navigation }) {
             {/* 用户行 */}
             {users.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>暂无用户</Text>
+                <Text style={styles.emptyText}>暂无注册用户</Text>
+                <Text style={styles.emptySubText}>请先注册团队成员账号</Text>
               </View>
             ) : (
               users.map(u => renderRow(u))
@@ -967,6 +1044,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textLight,
     fontWeight: '600',
+  },
+  emptySubText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  // 空数据横幅
+  emptyBanner: {
+    backgroundColor: COLORS.accentBg,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.accent,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderRadius: 8,
+  },
+  emptyBannerTitle: {
+    fontSize: 13,
+    color: COLORS.accent,
+    fontWeight: '700',
+  },
+  emptyBannerHint: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 3,
+    fontWeight: '500',
   },
 
   // 图例
