@@ -101,6 +101,22 @@ function appReducer(state, action) {
       };
     }
 
+    // 批量添加工步（模板复用，已存在的 seq 自动跳过）
+    case 'ADD_ITEMS_BATCH': {
+      const { groupId, items } = action.payload;
+      return {
+        ...state,
+        workGroups: state.workGroups.map(g => {
+          if (g.id !== groupId) return g;
+          const existingSeqs = new Set(g.items.map(it => it.seq));
+          const newItems = items
+            .filter(it => !existingSeqs.has(it.seq))
+            .map(it => ({ ...it }));
+          return { ...g, items: [...g.items, ...newItems] };
+        }),
+      };
+    }
+
     case 'UPDATE_GROUP_ITEM': {
       const { groupId, seq, updates } = action.payload;
       return {
@@ -455,6 +471,25 @@ export function AppProvider({ children }) {
             await dbDeleteWorkItem(groupId, seq);
             break;
           }
+          case 'ADD_ITEMS_BATCH': {
+            const { groupId, items } = action.payload;
+            const targetGroup = stateRef.current.workGroups.find(g => g.id === groupId);
+            const ownerUserId = targetGroup?.userId || user.id;
+            for (const it of items) {
+              await dbInsertWorkItem(groupId, ownerUserId, {
+                seq: it.seq,
+                name: it.name,
+                content: it.content || it.name,
+                score: it.score,
+                unit: it.unit || '',
+                quantity: it.quantity || 1,
+                timeRange: it.timeRange || '',
+                bianhao: it.bianhao || '',
+                categoryId: it.categoryId ?? null,
+              });
+            }
+            break;
+          }
           case 'UPDATE_GROUP_ITEM': {
             const { groupId, seq, updates } = action.payload;
             await dbUpdateWorkItem(groupId, seq, updates);
@@ -502,6 +537,7 @@ export function AppProvider({ children }) {
           'UPDATE_WORK_GROUP': '更新作业组',
           'DELETE_WORK_GROUP': '删除作业组',
           'ADD_ITEM_TO_GROUP': '添加工步',
+          'ADD_ITEMS_BATCH': '应用模板',
           'REMOVE_ITEM_FROM_GROUP': '删除工步',
           'UPDATE_GROUP_ITEM': '更新工步',
           'CLEAR_ALL_GROUPS': '清空作业组',

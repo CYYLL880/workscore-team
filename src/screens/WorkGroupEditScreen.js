@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   ScrollView, Modal, Alert, Switch,
@@ -8,6 +8,7 @@ import { formatScore } from '../utils/outputGenerator';
 import { showAlert, showConfirm } from '../lib/alert';
 import TimeWheelPicker, { generateWorkTimeOptions, linkEndTime } from '../components/TimeWheelPicker';
 import QuantityControl from '../components/QuantityControl';
+import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/templateService';
 
 // 主题色变量
 const COLORS = {
@@ -53,6 +54,14 @@ function WorkGroupEditScreen({ navigation, route }) {
   // 保存反馈：点击保存后短暂显示"已保存"
   const [savedFlash, setSavedFlash] = useState(false);
   const savedTimerRef = useRef(null);
+
+  // 模板
+  const [templates, setTemplates] = useState([]);
+  const [tplNameModal, setTplNameModal] = useState({ visible: false, name: '' });
+
+  useEffect(() => {
+    loadTemplates().then(setTemplates);
+  }, []);
 
   // 编辑弹窗状态
   const [contentModal, setContentModal] = useState({ visible: false, seq: null, value: '' });
@@ -176,6 +185,60 @@ function WorkGroupEditScreen({ navigation, route }) {
     savedTimerRef.current = setTimeout(() => {
       navigation.goBack();
     }, 600);
+  };
+
+  // 保存为模板
+  const handleSaveTemplate = () => {
+    if (group.items.length === 0) {
+      showAlert('提示', '当前作业组无工步，无法保存为模板');
+      return;
+    }
+    setTplNameModal({ visible: true, name: '' });
+  };
+  const confirmSaveTemplate = async () => {
+    const name = tplNameModal.name.trim() || `模板${templates.length + 1}`;
+    const next = await saveTemplate({
+      name,
+      train: trainInput,
+      isLinxiu,
+      items: group.items,
+    });
+    setTemplates(next);
+    setTplNameModal({ visible: false, name: '' });
+    showAlert('已保存', `模板"${name}"已保存（${group.items.length}个工步）`);
+  };
+
+  // 应用模板：批量添加工步到当前作业组
+  const handleApplyTemplate = (tpl) => {
+    const existingSeqs = new Set(group.items.map(it => it.seq));
+    const newItems = tpl.items.filter(it => !existingSeqs.has(it.seq));
+    if (newItems.length === 0) {
+      showAlert('提示', '模板中的工步已全部存在于当前作业组');
+      return;
+    }
+    showConfirm(
+      '应用模板',
+      `将添加 ${newItems.length} 个工步到当前作业组\n（已存在的 ${tpl.items.length - newItems.length} 个将跳过）`,
+      () => {
+        dispatch({ type: 'ADD_ITEMS_BATCH', payload: { groupId, items: newItems } });
+        // 同步临修状态和车号（仅当当前为空时）
+        if (tpl.isLinxiu && !isLinxiu) {
+          dispatch({ type: 'UPDATE_WORK_GROUP', payload: { groupId, updates: { isLinxiu: true } } });
+        }
+        if (tpl.train && !trainInput) {
+          setTrainInput(tpl.train);
+          dispatch({ type: 'UPDATE_WORK_GROUP', payload: { groupId, updates: { train: tpl.train } } });
+        }
+      }
+    );
+  };
+
+  // 删除模板
+  const handleDeleteTemplate = (tpl) => {
+    showConfirm('删除模板', `确定删除模板"${tpl.name}"吗？`, async () => {
+      const next = await deleteTemplate(tpl.id);
+      setTemplates(next);
+    });
   };
 
   // 渲染搜索结果项
@@ -385,6 +448,39 @@ function WorkGroupEditScreen({ navigation, route }) {
               </View>
             )}
 
+            {/* 我的模板 */}
+            {templates.length > 0 && (
+              <View style={styles.recentWrap}>
+                <Text style={styles.sectionTitle}>我的模板</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.recentScroll}
+                >
+                  {templates.map(tpl => {
+                    const mult = tpl.isLinxiu ? 1.5 : 1;
+                    const total = tpl.items.reduce((s, it) => s + it.score * (it.quantity || 1) * mult, 0);
+                    return (
+                      <TouchableOpacity
+                        key={tpl.id}
+                        style={styles.tplCard}
+                        activeOpacity={0.85}
+                        onPress={() => handleApplyTemplate(tpl)}
+                        onLongPress={() => handleDeleteTemplate(tpl)}
+                      >
+                        <View style={styles.tplTopRow}>
+                          <Text style={styles.tplName} numberOfLines={1}>{tpl.name}</Text>
+                          {tpl.isLinxiu && <Text style={styles.tplLinxiu}>临修</Text>}
+                        </View>
+                        <Text style={styles.tplCount}>{tpl.items.length}个工步 · {formatScore(total)}分</Text>
+                        <Text style={styles.tplHint}>点击应用 · 长按删除</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
             <Text style={styles.sectionTitle}>分类浏览（{categories.length}）</Text>
             <View style={styles.categoryGrid}>
               {categories.map((item, index) => renderCategoryCard({ item, index }))}
@@ -420,6 +516,13 @@ function WorkGroupEditScreen({ navigation, route }) {
           </Text>
           <Text style={styles.bottomScore}>小计：{formatScore(groupScore)}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.tplBtn}
+          activeOpacity={0.85}
+          onPress={handleSaveTemplate}
+        >
+          <Text style={styles.tplBtnText}>存模板</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.deleteGroupBtn}
           activeOpacity={0.85}
@@ -574,6 +677,40 @@ function WorkGroupEditScreen({ navigation, route }) {
                 <Text style={styles.modalCancelText}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalBtn, styles.modalConfirm]} onPress={saveBianhao}>
+                <Text style={styles.modalConfirmText}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 模板名称输入弹窗 */}
+      <Modal
+        visible={tplNameModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTplNameModal({ visible: false, name: '' })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>保存为模板</Text>
+            <Text style={styles.modalLabel}>模板名称</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder={`如：日常检修（${group.items.length}个工步）`}
+              placeholderTextColor={COLORS.textMuted}
+              value={tplNameModal.name}
+              onChangeText={(t) => setTplNameModal({ ...tplNameModal, name: t })}
+              autoFocus
+            />
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={() => setTplNameModal({ visible: false, name: '' })}
+              >
+                <Text style={styles.modalCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalConfirm]} onPress={confirmSaveTemplate}>
                 <Text style={styles.modalConfirmText}>保存</Text>
               </TouchableOpacity>
             </View>
@@ -871,6 +1008,55 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
   },
+
+  // 模板卡片
+  tplCard: {
+    width: 148,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  tplTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tplName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
+    flex: 1,
+    marginRight: 6,
+    overflow: 'hidden',
+  },
+  tplLinxiu: {
+    fontSize: 10,
+    color: COLORS.linxiu,
+    fontWeight: '700',
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  tplCount: {
+    fontSize: 11,
+    color: COLORS.accent,
+    fontWeight: '600',
+  },
+  tplHint: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 6,
+    fontWeight: '500',
+  },
   categoryCard: {
     width: '48%',
     backgroundColor: COLORS.card,
@@ -1093,6 +1279,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   saveBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tplBtn: {
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  tplBtnText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
