@@ -356,15 +356,15 @@ export function AppProvider({ children }) {
   const loadGroupById = useCallback(async (groupId) => {
     const group = await dbFetchGroupById(groupId);
     // 填充 categoryName
-    if (categories.length > 0) {
+    if (state.categories.length > 0) {
       group.items = group.items.map(it => {
-        const cat = categories.find(c => c.id === it.categoryId);
+        const cat = state.categories.find(c => c.id === it.categoryId);
         return { ...it, categoryName: cat?.short_name || cat?.name || '' };
       });
     }
     dispatch({ type: 'ADD_WORK_GROUP', payload: group });
     return group;
-  }, [categories]);
+  }, [state.categories]);
 
   // 通用 dispatch 包装：乐观更新（先 dispatch，再异步写库）
   const appDispatch = useCallback((action) => {
