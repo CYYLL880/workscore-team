@@ -219,6 +219,13 @@ function HomeScreen({ navigation }) {
             </TouchableOpacity>
           )}
           <TouchableOpacity
+            style={styles.scoreSheetBtn}
+            onPress={() => navigation.navigate('ScoreSheet')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.scoreSheetBtnText}>工分总表</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.gearBtn}
             onPress={() => { setPwdInput(''); setPwdModal(true); }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -391,6 +398,18 @@ const styles = StyleSheet.create({
   },
   adminBtnText: {
     color: '#c4b5fd',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  scoreSheetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(59,130,246,0.25)',
+    marginRight: 8,
+  },
+  scoreSheetBtnText: {
+    color: '#bfdbfe',
     fontSize: 12,
     fontWeight: '600',
   },

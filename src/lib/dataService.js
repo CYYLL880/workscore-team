@@ -265,3 +265,253 @@ export async function clearAllWorkGroups(userId) {
   const { error } = await supabase.from('work_groups').delete().eq('user_id', userId);
   if (error) throw error;
 }
+
+// ============================================
+// 工分总表（按月汇总）
+// ============================================
+
+/**
+ * 加载某月所有用户的工分数据
+ * @param {number} year 如 2026
+ * @param {number} month 1-12
+ * @returns {Promise<{users: Array, days: Object}>}
+ *   users: [{ id, emp_no, name, role }]
+ *   days: { 'YYYY-MM-DD': { [userId]: { score, groupCount, confirmed, groups: [{id, train, isLinxiu, items}] } } }
+ */
+export async function fetchMonthScoreData(year, month) {
+  // 计算月份范围
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endMonth = month === 12 ? 1 : month + 1;
+  const endYear = month === 12 ? year + 1 : year;
+  const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-01`;
+
+  // 并行加载用户、作业组、工步
+  const [
+    { data: profiles, error: pErr },
+    { data: groups, error: gErr },
+    { data: items, error: iErr },
+  ] = await Promise.all([
+    supabase.from('profiles').select('id, emp_no, name, role').order('emp_no', { ascending: true }),
+    supabase.from('work_groups').select('*').gte('group_date', startDate).lt('group_date', endDate),
+    supabase.from('work_items').select('*').gte('created_at', startDate).lt('created_at', endDate),
+  ]);
+
+  if (pErr) throw pErr;
+  if (gErr) throw gErr;
+  if (iErr) throw iErr;
+
+  // 按 group_id 分组工步
+  const itemsByGroup = new Map();
+  (items || []).forEach(it => {
+    if (!itemsByGroup.has(it.group_id)) itemsByGroup.set(it.group_id, []);
+    itemsByGroup.get(it.group_id).push(it);
+  });
+
+  // 按 date -> userId 组织数据
+  const days = {};
+  (groups || []).forEach(g => {
+    const dateKey = g.group_date; // YYYY-MM-DD
+    if (!days[dateKey]) days[dateKey] = {};
+    const groupItems = (itemsByGroup.get(g.id) || []).map(it => ({
+      seq: it.seq,
+      name: it.name,
+      content: it.content || it.name,
+      score: Number(it.score),
+      unit: it.unit || '',
+      quantity: Number(it.quantity) || 1,
+      timeRange: it.time_range || '',
+      bianhao: it.bianhao || '',
+      categoryId: it.category_id ?? null,
+    }));
+    const groupScore = groupItems.reduce((s, it) => s + it.score * it.quantity * (g.is_linxiu ? 1.5 : 1), 0);
+    if (!days[dateKey][g.user_id]) {
+      days[dateKey][g.user_id] = { score: 0, groupCount: 0, confirmed: true, groups: [] };
+    }
+    days[dateKey][g.user_id].score += groupScore;
+    days[dateKey][g.user_id].groupCount += 1;
+    if (g.status !== 'confirmed') days[dateKey][g.user_id].confirmed = false;
+    days[dateKey][g.user_id].groups.push({
+      id: g.id,
+      train: g.train_no || '',
+      isLinxiu: !!g.is_linxiu,
+      status: g.status,
+      items: groupItems,
+    });
+  });
+
+  return { users: profiles || [], days };
+}
+
+/**
+ * 管理员确认某用户某天的所有作业组
+ */
+export async function confirmDay(targetUserId, dateStr, adminUserId) {
+  const { error } = await supabase
+    .from('work_groups')
+    .update({
+      status: 'confirmed',
+      confirmed_by: adminUserId,
+      confirmed_at: new Date().toISOString(),
+    })
+    .eq('user_id', targetUserId)
+    .eq('group_date', dateStr);
+  if (error) throw error;
+}
+
+/**
+ * 管理员撤销确认某用户某天的所有作业组
+ */
+export async function unconfirmDay(targetUserId, dateStr) {
+  const { error } = await supabase
+    .from('work_groups')
+    .update({
+      status: 'editing',
+      confirmed_by: null,
+      confirmed_at: null,
+    })
+    .eq('user_id', targetUserId)
+    .eq('group_date', dateStr);
+  if (error) throw error;
+}
+
+/**
+ * 检查某用户某天的工分是否已确认
+ */
+export function isDayConfirmed(days, dateStr, userId) {
+  const day = days[dateStr];
+  if (!day || !day[userId]) return false;
+  return day[userId].confirmed;
+}
+
+/**
+ * 订阅某月工分数据变更（work_groups / work_items / profiles）
+ * @param {number} year
+ * @param {number} month
+ * @param {() => void} onChange 数据变更回调
+ * @returns {() => void} 取消订阅函数
+ */
+export function subscribeMonthScoreData(year, month, onChange) {
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endMonth = month === 12 ? 1 : month + 1;
+  const endYear = month === 12 ? year + 1 : year;
+  const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-01`;
+
+  const filters = [
+    `group_date=gte.${startDate}`,
+    `group_date=lt.${endDate}`,
+  ];
+
+  const channels = [];
+  let disposed = false;
+
+  const makeChannel = (name, table, extraFilter) => {
+    const ch = supabase
+      .channel(name)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: extraFilter }, () => {
+        if (!disposed) onChange();
+      })
+      .subscribe();
+    channels.push(ch);
+  };
+
+  makeChannel(`score-groups-${year}-${month}`, 'work_groups', `${filters[0]}`);
+  // work_items 用 created_at 范围过滤（与 fetchMonthScoreData 一致）
+  makeChannel(`score-items-${year}-${month}`, 'work_items', `created_at=gte.${startDate}`);
+  makeChannel(`score-profiles-${year}-${month}`, 'profiles', undefined);
+
+  return () => {
+    disposed = true;
+    channels.forEach(ch => supabase.removeChannel(ch));
+  };
+}
+
+/**
+ * 生成 Excel 导出数据
+ * @param {Array} users [{ id, emp_no, name, role }]
+ * @param {Object} days { 'YYYY-MM-DD': { [userId]: { score, groupCount, confirmed, groups } } }
+ * @param {number} year
+ * @param {number} month
+ * @returns {Array<{sheetName, aoa}>} 每天一个 Sheet（二维数组形式）
+ */
+export function buildMonthExcelSheets(users, days, year, month) {
+  const sheets = [];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const sortedDates = Object.keys(days).sort();
+  const noDataSheets = [];
+
+  // 汇总 sheet：用户 × 日 工分
+  const summaryHeader = ['工号', '姓名', '角色'];
+  for (let d = 1; d <= daysInMonth; d++) {
+    summaryHeader.push(`${month}月${d}日`);
+  }
+  summaryHeader.push('当月总计');
+  const summaryRows = users.map(u => {
+    const row = [u.emp_no, u.name, u.role === 'admin' ? '管理员' : '成员'];
+    let total = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const cell = days[dateStr]?.[u.id];
+      const score = cell ? Number(cell.score.toFixed(2)) : 0;
+      row.push(score || 0);
+      total += score;
+    }
+    row.push(Number(total.toFixed(2)));
+    return row;
+  });
+  sheets.push({ sheetName: '当月汇总', aoa: [summaryHeader, ...summaryRows] });
+
+  // 每天明细 sheet：作业内容 + 工分
+  sortedDates.forEach(dateStr => {
+    const day = days[dateStr];
+    if (!day) return;
+    const dayDate = new Date(dateStr);
+    const dayNum = dayDate.getDate();
+
+    const header = ['工号', '姓名', '车号/临修', '序号', '工作内容', '编号', '时间段', '数量', '单次工分', '小计'];
+    const rows = [];
+    users.forEach(u => {
+      const cell = day[u.id];
+      if (!cell || !cell.groups || cell.groups.length === 0) return;
+      cell.groups.forEach(g => {
+        const multiplier = g.isLinxiu ? 1.5 : 1;
+        const trainLabel = g.train || '无';
+        const linxiuTag = g.isLinxiu ? ' [临修×1.5]' : '';
+        if (!g.items || g.items.length === 0) {
+          rows.push([u.emp_no, u.name, `${trainLabel}${linxiuTag}`, '', '', '', '', '', '', '']);
+        } else {
+          g.items.forEach(it => {
+            const subtotal = it.score * it.quantity * multiplier;
+            rows.push([
+              u.emp_no,
+              u.name,
+              `${trainLabel}${linxiuTag}`,
+              it.seq,
+              it.content || it.name,
+              it.bianhao || '',
+              it.timeRange || '',
+              it.quantity,
+              it.score,
+              Number(subtotal.toFixed(2)),
+            ]);
+          });
+        }
+      });
+    });
+
+    if (rows.length === 0) {
+      noDataSheets.push(dateStr);
+      return;
+    }
+
+    // 合计行
+    const totalScore = rows.reduce((s, r) => s + (typeof r[9] === 'number' ? r[9] : 0), 0);
+    rows.push(['', '', '', '', '', '', '', '', '当日合计', Number(totalScore.toFixed(2))]);
+
+    sheets.push({
+      sheetName: `${month}月${dayNum}日`,
+      aoa: [header, ...rows],
+    });
+  });
+
+  return sheets;
+}

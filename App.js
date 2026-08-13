@@ -12,6 +12,7 @@ import WorkGroupEditScreen from './src/screens/WorkGroupEditScreen';
 import OutputScreen from './src/screens/OutputScreen';
 import CustomizeScreen from './src/screens/CustomizeScreen';
 import UserManagementScreen from './src/screens/UserManagementScreen';
+import ScoreSheetScreen from './src/screens/ScoreSheetScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -53,6 +54,7 @@ function MainApp() {
         <Stack.Screen name="Output" component={OutputScreen} />
         <Stack.Screen name="Customize" component={CustomizeScreen} />
         <Stack.Screen name="UserManagement" component={UserManagementScreen} />
+        <Stack.Screen name="ScoreSheet" component={ScoreSheetScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
