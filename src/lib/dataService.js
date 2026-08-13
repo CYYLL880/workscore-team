@@ -383,7 +383,14 @@ export async function fetchMonthScoreData(year, month) {
     });
   });
 
-  return { users: profiles || [], days };
+  // super_admin 置底，其余按工号升序
+  const sortedUsers = (profiles || []).sort((a, b) => {
+    if (a.role === 'super_admin' && b.role !== 'super_admin') return 1;
+    if (a.role !== 'super_admin' && b.role === 'super_admin') return -1;
+    return String(a.emp_no).localeCompare(String(b.emp_no));
+  });
+
+  return { users: sortedUsers, days };
 }
 
 /**
