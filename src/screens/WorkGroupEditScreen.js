@@ -6,7 +6,8 @@ import {
 import { useApp } from '../context/AppContext';
 import { formatScore } from '../utils/outputGenerator';
 import { showAlert, showConfirm } from '../lib/alert';
-import TimeWheelPicker, { generateWorkTimeOptions } from '../components/TimeWheelPicker';
+import TimeWheelPicker, { generateWorkTimeOptions, linkEndTime } from '../components/TimeWheelPicker';
+import QuantityControl from '../components/QuantityControl';
 
 // 主题色变量
 const COLORS = {
@@ -39,7 +40,7 @@ const CARD_COLORS = [
 ];
 
 function WorkGroupEditScreen({ navigation, route }) {
-  const { categories, dispatch, getGroupById, getGroupScore, searchSteps, excludeMode, excludedSeqs } = useApp();
+  const { categories, dispatch, getGroupById, getGroupScore, searchSteps, excludeMode, excludedSeqs, recentSteps } = useApp();
 
   const groupId = route.params?.groupId;
   const isNew = route.params?.isNew;
@@ -117,10 +118,9 @@ function WorkGroupEditScreen({ navigation, route }) {
     dispatch({ type: 'REMOVE_ITEM_FROM_GROUP', payload: { groupId, seq } });
   };
 
-  // 数量增减
-  const handleQuantity = (seq, delta, current) => {
-    const next = Math.max(1, current + delta);
-    dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq, updates: { quantity: next } } });
+  // 数量修改（步进或直改）
+  const handleQuantity = (seq, next) => {
+    dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq, updates: { quantity: Math.max(1, next) } } });
   };
 
   // 打开内容编辑弹窗
@@ -256,21 +256,10 @@ function WorkGroupEditScreen({ navigation, route }) {
 
         {/* 底部行：数量控制 + 工分 */}
         <View style={styles.itemBottom}>
-          <View style={styles.qtyControl}>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => handleQuantity(item.seq, -1, item.quantity)}
-            >
-              <Text style={styles.qtyBtnText}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyValue}>{item.quantity}</Text>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => handleQuantity(item.seq, 1, item.quantity)}
-            >
-              <Text style={styles.qtyBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
+          <QuantityControl
+            value={item.quantity}
+            onChange={(v) => handleQuantity(item.seq, v)}
+          />
           <Text style={styles.scoreText}>{formatScore(score)}分</Text>
         </View>
 
@@ -364,6 +353,38 @@ function WorkGroupEditScreen({ navigation, route }) {
           </View>
         ) : (
           <View style={styles.section}>
+            {/* 最近使用工步 */}
+            {recentSteps.length > 0 && (
+              <View style={styles.recentWrap}>
+                <Text style={styles.sectionTitle}>最近使用</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.recentScroll}
+                >
+                  {recentSteps.map(step => {
+                    const inGroup = isInGroup(step.seq);
+                    return (
+                      <TouchableOpacity
+                        key={step.seq}
+                        style={[styles.recentCard, inGroup && styles.recentCardInGroup]}
+                        activeOpacity={0.85}
+                        disabled={inGroup}
+                        onPress={() => handleAddStep(step)}
+                      >
+                        <View style={styles.recentTopRow}>
+                          <Text style={styles.recentSeq}>{step.seq}</Text>
+                          <Text style={styles.recentScore}>{formatScore(step.score)}分</Text>
+                        </View>
+                        <Text style={styles.recentName} numberOfLines={2}>{step.name}</Text>
+                        {inGroup && <Text style={styles.recentAdded}>已选</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
             <Text style={styles.sectionTitle}>分类浏览（{categories.length}）</Text>
             <View style={styles.categoryGrid}>
               {categories.map((item, index) => renderCategoryCard({ item, index }))}
@@ -498,7 +519,7 @@ function WorkGroupEditScreen({ navigation, route }) {
                 <TimeWheelPicker
                   times={generateWorkTimeOptions()}
                   selectedValue={timeModal.start}
-                  onSelect={(t) => setTimeModal({ ...timeModal, start: t })}
+                  onSelect={(t) => setTimeModal(prev => ({ ...prev, start: t, end: linkEndTime(t, prev.end) }))}
                 />
               </View>
               <View style={styles.timePickerCol}>
@@ -506,7 +527,7 @@ function WorkGroupEditScreen({ navigation, route }) {
                 <TimeWheelPicker
                   times={generateWorkTimeOptions()}
                   selectedValue={timeModal.end}
-                  onSelect={(t) => setTimeModal({ ...timeModal, end: t })}
+                  onSelect={(t) => setTimeModal(prev => ({ ...prev, end: t }))}
                 />
               </View>
             </View>
@@ -788,6 +809,67 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+  },
+
+  // 最近使用
+  recentWrap: {
+    marginBottom: 20,
+  },
+  recentScroll: {
+    gap: 10,
+    paddingRight: 4,
+  },
+  recentCard: {
+    width: 128,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  recentCardInGroup: {
+    backgroundColor: COLORS.accentBg,
+    borderColor: COLORS.accent,
+    opacity: 0.7,
+  },
+  recentTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recentSeq: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.accent,
+    backgroundColor: COLORS.accentBg,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  recentScore: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.accent,
+  },
+  recentName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.text,
+    lineHeight: 16,
+    minHeight: 32,
+  },
+  recentAdded: {
+    fontSize: 10,
+    color: COLORS.accent,
+    fontWeight: '700',
+    marginTop: 4,
   },
   categoryCard: {
     width: '48%',

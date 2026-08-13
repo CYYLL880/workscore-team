@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Modal, ScrollView } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { formatScore } from '../utils/outputGenerator';
-import TimeWheelPicker, { generateWorkTimeOptions } from '../components/TimeWheelPicker';
+import TimeWheelPicker, { generateWorkTimeOptions, linkEndTime } from '../components/TimeWheelPicker';
+import QuantityControl from '../components/QuantityControl';
 
 const COLORS = {
   primary: '#0f172a',
@@ -61,9 +62,8 @@ function CategoryDetailScreen({ navigation, route }) {
     dispatch({ type: 'REMOVE_ITEM_FROM_GROUP', payload: { groupId, seq } });
   };
 
-  const handleQuantity = (seq, delta, current) => {
-    const next = Math.max(1, current + delta);
-    dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq, updates: { quantity: next } } });
+  const handleQuantity = (seq, next) => {
+    dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq, updates: { quantity: Math.max(1, next) } } });
   };
 
   // 内容编辑
@@ -103,21 +103,10 @@ function CategoryDetailScreen({ navigation, route }) {
       <View style={styles.editPanel}>
         {/* 数量控制 + 工分 */}
         <View style={styles.editRow}>
-          <View style={styles.qtyControl}>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => handleQuantity(item.seq, -1, item.quantity)}
-            >
-              <Text style={styles.qtyBtnText}>−</Text>
-            </TouchableOpacity>
-            <Text style={styles.qtyValue}>{item.quantity}</Text>
-            <TouchableOpacity
-              style={styles.qtyBtn}
-              onPress={() => handleQuantity(item.seq, 1, item.quantity)}
-            >
-              <Text style={styles.qtyBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
+          <QuantityControl
+            value={item.quantity}
+            onChange={(v) => handleQuantity(item.seq, v)}
+          />
           <Text style={[styles.editScore, { color: borderColor }]}>{formatScore(score)}分</Text>
           <TouchableOpacity
             style={styles.removeBtn}
@@ -362,7 +351,7 @@ function CategoryDetailScreen({ navigation, route }) {
                   <TimeWheelPicker
                     times={generateWorkTimeOptions()}
                     selectedValue={timeModal.start}
-                    onSelect={(t) => setTimeModal({ ...timeModal, start: t })}
+                    onSelect={(t) => setTimeModal(prev => ({ ...prev, start: t, end: linkEndTime(t, prev.end) }))}
                   />
                 </View>
                 <View style={styles.timePickerCol}>
@@ -370,7 +359,7 @@ function CategoryDetailScreen({ navigation, route }) {
                   <TimeWheelPicker
                     times={generateWorkTimeOptions()}
                     selectedValue={timeModal.end}
-                    onSelect={(t) => setTimeModal({ ...timeModal, end: t })}
+                    onSelect={(t) => setTimeModal(prev => ({ ...prev, end: t }))}
                   />
                 </View>
               </View>

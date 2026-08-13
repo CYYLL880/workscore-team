@@ -52,6 +52,19 @@ function minutesToTime(min) {
 }
 
 /**
+ * 时间联动：根据开始时间推算结束时间
+ * 仅当结束时间为空或不晚于开始时间时联动
+ * 上午段（≤11:40）→ 11:40；下午段 → 17:30
+ */
+export function linkEndTime(start, currentEnd) {
+  if (!start) return currentEnd;
+  const s = timeToMinutes(start);
+  const e = timeToMinutes(currentEnd);
+  if (currentEnd && e > s) return currentEnd; // 已有合法结束时间，不动
+  return s <= 11 * 60 + 40 ? '11:40' : '17:30';
+}
+
+/**
  * 时间滑动选择器
  * @param {string[]} times - 时间选项数组
  * @param {string} selectedValue - 当前选中的时间

@@ -225,6 +225,8 @@ export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  // 最近使用的工步 seq（最新在前，最多 12 个，本地持久化）
+  const [recentSeqs, setRecentSeqs] = useState([]);
   const userIdRef = useRef(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -292,6 +294,43 @@ export function AppProvider({ children }) {
       console.warn('保存历史记录失败', e)
     );
   }, [state.history]);
+
+  // 加载最近使用工步
+  useEffect(() => {
+    (async () => {
+      try {
+        const json = await AsyncStorage.getItem('recentSteps');
+        if (json) setRecentSeqs(JSON.parse(json));
+      } catch (e) { /* 忽略 */ }
+    })();
+  }, []);
+
+  // 记录工步使用（最新置顶，去重，最多12个）
+  const markStepUsed = useCallback((seq) => {
+    setRecentSeqs(prev => {
+      if (prev[0] === seq) return prev;
+      const next = [seq, ...prev.filter(s => s !== seq)].slice(0, 12);
+      AsyncStorage.setItem('recentSteps', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // 最近使用工步详情（映射 categories，过滤已删除的，最多 8 个）
+  const recentSteps = React.useMemo(() => {
+    if (recentSeqs.length === 0 || state.categories.length === 0) return [];
+    const result = [];
+    for (const seq of recentSeqs) {
+      for (const cat of state.categories) {
+        const step = cat.steps.find(s => s.seq === seq);
+        if (step) {
+          result.push({ ...step, categoryName: cat.short_name, categoryId: cat.id });
+          break;
+        }
+      }
+      if (result.length >= 8) break;
+    }
+    return result;
+  }, [recentSeqs, state.categories]);
 
   // 计算单个作业组的工分
   const getGroupScore = useCallback((group) => {
@@ -373,6 +412,11 @@ export function AppProvider({ children }) {
   const appDispatch = useCallback((action) => {
     // 同步更新本地 state
     dispatch(action);
+
+    // 记录最近使用工步
+    if (action.type === 'ADD_ITEM_TO_GROUP' && action.payload?.step?.seq != null) {
+      markStepUsed(action.payload.step.seq);
+    }
 
     // 异步写库（失败仅警告，不回滚避免复杂度）
     if (!user) return;
@@ -479,7 +523,7 @@ export function AppProvider({ children }) {
         showAlert('同步失败', `${opName}未保存到云端\n${hint}`);
       }
     });
-  }, [user]);
+  }, [user, markStepUsed]);
 
   // ============================================
   // 工种/工步操作（仅管理员，需先插库再 dispatch）
@@ -534,6 +578,7 @@ export function AppProvider({ children }) {
     searchSteps,
     getCategoryById,
     getGroupById,
+    recentSteps, // 最近使用工步（最多8个）
     isLoaded,
     loadError,
     reload: () => user && loadAll(user.id),
