@@ -285,24 +285,38 @@ export async function fetchMonthScoreData(year, month) {
   const endYear = month === 12 ? year + 1 : year;
   const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-01`;
 
-  // 并行加载用户、作业组、工步
+  // 并行加载用户和作业组
   const [
     { data: profiles, error: pErr },
     { data: groups, error: gErr },
-    { data: items, error: iErr },
   ] = await Promise.all([
     supabase.from('profiles').select('id, emp_no, name, role').order('emp_no', { ascending: true }),
     supabase.from('work_groups').select('*').gte('group_date', startDate).lt('group_date', endDate),
-    supabase.from('work_items').select('*').gte('created_at', startDate).lt('created_at', endDate),
   ]);
 
   if (pErr) throw pErr;
   if (gErr) throw gErr;
-  if (iErr) throw iErr;
+
+  // 提取当月所有 group_id，查询对应的 work_items（避免用 created_at 误过滤补录数据）
+  const groupIds = (groups || []).map(g => g.id);
+  let items = [];
+  if (groupIds.length > 0) {
+    // 分批查询（Supabase URL 长度限制，每批最多约 300 个 UUID）
+    const BATCH = 200;
+    for (let i = 0; i < groupIds.length; i += BATCH) {
+      const batch = groupIds.slice(i, i + BATCH);
+      const { data: batchItems, error: iErr } = await supabase
+        .from('work_items')
+        .select('*')
+        .in('group_id', batch);
+      if (iErr) throw iErr;
+      if (batchItems) items = items.concat(batchItems);
+    }
+  }
 
   // 按 group_id 分组工步
   const itemsByGroup = new Map();
-  (items || []).forEach(it => {
+  items.forEach(it => {
     if (!itemsByGroup.has(it.group_id)) itemsByGroup.set(it.group_id, []);
     itemsByGroup.get(it.group_id).push(it);
   });
