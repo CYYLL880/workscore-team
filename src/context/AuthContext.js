@@ -14,7 +14,14 @@ export function AuthProvider({ children }) {
       .select('*')
       .eq('id', userId)
       .single();
-    setProfile(data);
+    if (!data) {
+      // Profile 不存在（用户已被删除），自动登出
+      await supabase.auth.signOut();
+      setSession(null);
+      setProfile(null);
+    } else {
+      setProfile(data);
+    }
     setLoading(false);
   };
 
