@@ -337,10 +337,11 @@ export function AppProvider({ children }) {
     const newId = await dbInsertWorkGroup(user.id, {
       train: payload?.train || '',
       isLinxiu: payload?.isLinxiu || false,
+      groupDate: payload?.groupDate || null,
     });
     dispatch({
       type: 'ADD_WORK_GROUP',
-      payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false },
+      payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false, groupDate: payload?.groupDate || null },
     });
     return newId;
   }, [user]);

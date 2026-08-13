@@ -168,9 +168,9 @@ function ScoreSheetScreen({ navigation }) {
     }
 
     if (groups.length === 0) {
-      // 当天无作业组，新建一个
+      // 当天无作业组，新建一个（使用用户点击的日期）
       try {
-        const newId = await createWorkGroup({ train: '', isLinxiu: false });
+        const newId = await createWorkGroup({ train: '', isLinxiu: false, groupDate: dateStr });
         setDetailModal({ ...detailModal, visible: false });
         navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
       } catch (e) {

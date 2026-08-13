@@ -178,12 +178,12 @@ export async function fetchWorkGroups(userId) {
 }
 
 // 新增作业组，返回数据库 UUID
-export async function insertWorkGroup(userId, { train, isLinxiu }) {
+export async function insertWorkGroup(userId, { train, isLinxiu, groupDate }) {
   const { data, error } = await supabase
     .from('work_groups')
     .insert({
       user_id: userId,
-      group_date: new Date().toISOString().slice(0, 10),
+      group_date: groupDate || new Date().toISOString().slice(0, 10),
       train_no: train || null,
       is_linxiu: !!isLinxiu,
       status: 'editing',
