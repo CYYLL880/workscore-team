@@ -268,12 +268,9 @@ function HomeScreen({ navigation }) {
                 <Text style={styles.emptyText}>暂无作业组</Text>
               </View>
             ) : (
-              <FlatList
-                data={workGroups}
-                keyExtractor={item => item.id}
-                renderItem={renderGroupCard}
-                scrollEnabled={false}
-              />
+              <View>
+                {workGroups.map((item) => renderGroupCard({ item }))}
+              </View>
             )}
 
             {/* 新增作业组按钮 */}
@@ -296,12 +293,9 @@ function HomeScreen({ navigation }) {
                 <Text style={styles.emptyText}>暂无历史记录</Text>
               </View>
             ) : (
-              <FlatList
-                data={history}
-                keyExtractor={item => String(item.id || item.date)}
-                renderItem={renderHistoryItem}
-                scrollEnabled={false}
-              />
+              <View>
+                {history.map((item) => renderHistoryItem({ item }))}
+              </View>
             )}
           </View>
         )}
