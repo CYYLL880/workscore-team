@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
+import { showAlert } from '../lib/alert';
 import {
   fetchCategoriesWithSteps,
   insertCategory as dbInsertCategory,
@@ -452,6 +453,30 @@ export function AppProvider({ children }) {
         }
       } catch (e) {
         console.warn('同步到 Supabase 失败:', action.type, e);
+        // 操作名称映射
+        const opNames = {
+          'UPDATE_WORK_GROUP': '更新作业组',
+          'DELETE_WORK_GROUP': '删除作业组',
+          'ADD_ITEM_TO_GROUP': '添加工步',
+          'REMOVE_ITEM_FROM_GROUP': '删除工步',
+          'UPDATE_GROUP_ITEM': '更新工步',
+          'CLEAR_ALL_GROUPS': '清空作业组',
+          'UPDATE_CATEGORY': '更新工种',
+          'DELETE_CATEGORY': '删除工种',
+          'ADD_STEP': '添加工步细则',
+          'UPDATE_STEP': '更新工步细则',
+          'DELETE_STEP': '删除工步细则',
+        };
+        const opName = opNames[action.type] || '操作';
+        const errMsg = e?.message || String(e);
+        // 网络错误 vs 权限错误 vs 其他
+        let hint = '请检查网络后重试';
+        if (errMsg.includes('JWT') || errMsg.includes('permission') || errMsg.includes('RLS') || errMsg.includes('policy')) {
+          hint = '权限不足，无法执行此操作';
+        } else if (errMsg.includes('network') || errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+          hint = '网络连接失败，请检查网络后重试';
+        }
+        showAlert('同步失败', `${opName}未保存到云端\n${hint}`);
       }
     });
   }, [user]);
