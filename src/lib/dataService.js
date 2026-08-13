@@ -191,6 +191,7 @@ export async function fetchGroupById(groupId) {
     id: group.id,
     train: group.train_no || '',
     isLinxiu: !!group.is_linxiu,
+    userId: group.user_id, // 保留所有者ID（管理员编辑他人作业组用）
     items: (items || []).map(it => ({
       seq: it.seq,
       name: it.name,

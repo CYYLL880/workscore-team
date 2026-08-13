@@ -225,6 +225,8 @@ export function AppProvider({ children }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const userIdRef = useRef(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // 加载 categories 和当前用户的 workGroups
   const loadAll = useCallback(async (uid) => {
@@ -387,6 +389,8 @@ export function AppProvider({ children }) {
           }
           case 'ADD_ITEM_TO_GROUP': {
             const { groupId, step, category } = action.payload;
+            const targetGroup = stateRef.current.workGroups.find(g => g.id === groupId);
+            const ownerUserId = targetGroup?.userId || user.id;
             const item = {
               seq: step.seq,
               name: step.name,
@@ -398,7 +402,7 @@ export function AppProvider({ children }) {
               bianhao: '',
               categoryId: category?.id ?? null,
             };
-            await dbInsertWorkItem(groupId, user.id, item);
+            await dbInsertWorkItem(groupId, ownerUserId, item);
             break;
           }
           case 'REMOVE_ITEM_FROM_GROUP': {
