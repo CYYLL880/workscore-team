@@ -98,17 +98,25 @@ function ScoreSheetScreen({ navigation }) {
   // 实时订阅
   useEffect(() => {
     const unsubscribe = subscribeMonthScoreData(year, month, () => {
-      // 防抖：500ms 内多次变更只重新加载一次
+      // 防抖：200ms 内多次变更只重新加载一次
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
       reloadTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) loadData(false);
-      }, 500);
+      }, 200);
     });
     return () => {
       unsubscribe();
       if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
     };
   }, [year, month, loadData]);
+
+  // 从编辑页返回时重新加载（删除/修改后即时刷新）
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (isMountedRef.current) loadData(false);
+    });
+    return unsubscribe;
+  }, [navigation, loadData]);
 
   // 月份切换（仅管理员）
   const canSwitchMonth = isAdmin;
@@ -381,8 +389,10 @@ function ScoreSheetScreen({ navigation }) {
 
   // 详情 Modal 内容
   const renderDetailModal = () => {
-    const { userId, dateStr, dayNum, cell } = detailModal;
+    const { userId, dateStr, dayNum } = detailModal;
     if (!userId) return null;
+    // 从 days 实时状态读取，确保确认/撤销后按钮即时变化
+    const cell = days[dateStr]?.[userId];
     const targetUser = users.find(u => u.id === userId);
     const isSelf = userId === user.id;
     const confirmed = cell?.confirmed;
