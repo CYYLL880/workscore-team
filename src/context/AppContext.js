@@ -10,6 +10,7 @@ import {
   updateStep as dbUpdateStep,
   deleteStep as dbDeleteStep,
   fetchWorkGroups,
+  fetchGroupById as dbFetchGroupById,
   insertWorkGroup as dbInsertWorkGroup,
   updateWorkGroup as dbUpdateWorkGroup,
   deleteWorkGroup as dbDeleteWorkGroup,
@@ -334,17 +335,36 @@ export function AppProvider({ children }) {
   // 新建作业组：先插数据库拿 UUID，再 dispatch
   const createWorkGroup = useCallback(async (payload) => {
     if (!user) throw new Error('未登录');
-    const newId = await dbInsertWorkGroup(user.id, {
+    // 管理员可为他人创建作业组（targetUserId）
+    const targetUserId = payload?.targetUserId || user.id;
+    const newId = await dbInsertWorkGroup(targetUserId, {
       train: payload?.train || '',
       isLinxiu: payload?.isLinxiu || false,
       groupDate: payload?.groupDate || null,
     });
-    dispatch({
-      type: 'ADD_WORK_GROUP',
-      payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false, groupDate: payload?.groupDate || null },
-    });
+    // 仅当为自己创建时才加入本地 state（他人作业组由实时订阅刷新）
+    if (targetUserId === user.id) {
+      dispatch({
+        type: 'ADD_WORK_GROUP',
+        payload: { id: newId, train: payload?.train || '', isLinxiu: payload?.isLinxiu || false, groupDate: payload?.groupDate || null },
+      });
+    }
     return newId;
   }, [user]);
+
+  // 管理员加载他人作业组到本地 state（编辑用）
+  const loadGroupById = useCallback(async (groupId) => {
+    const group = await dbFetchGroupById(groupId);
+    // 填充 categoryName
+    if (categories.length > 0) {
+      group.items = group.items.map(it => {
+        const cat = categories.find(c => c.id === it.categoryId);
+        return { ...it, categoryName: cat?.short_name || cat?.name || '' };
+      });
+    }
+    dispatch({ type: 'ADD_WORK_GROUP', payload: group });
+    return group;
+  }, [categories]);
 
   // 通用 dispatch 包装：乐观更新（先 dispatch，再异步写库）
   const appDispatch = useCallback((action) => {
@@ -476,6 +496,7 @@ export function AppProvider({ children }) {
     ...state,
     dispatch: appDispatch, // 替换为带同步的 dispatch
     createWorkGroup,
+    loadGroupById,
     createCategory,
     restoreWorkGroups,
     getGroupScore,

@@ -177,8 +177,38 @@ export async function fetchWorkGroups(userId) {
   }));
 }
 
+// 按ID加载单个作业组 + 工步（管理员编辑他人作业组用）
+export async function fetchGroupById(groupId) {
+  const [{ data: group, error: gErr }, { data: items, error: iErr }] = await Promise.all([
+    supabase.from('work_groups').select('*').eq('id', groupId).single(),
+    supabase.from('work_items').select('*').eq('group_id', groupId).order('created_at', { ascending: true }),
+  ]);
+
+  if (gErr) throw gErr;
+  if (iErr) throw iErr;
+
+  return {
+    id: group.id,
+    train: group.train_no || '',
+    isLinxiu: !!group.is_linxiu,
+    items: (items || []).map(it => ({
+      seq: it.seq,
+      name: it.name,
+      content: it.content || it.name,
+      score: Number(it.score),
+      unit: it.unit || '',
+      quantity: Number(it.quantity) || 1,
+      timeRange: it.time_range || '',
+      bianhao: it.bianhao || '',
+      categoryId: it.category_id ?? null,
+      categoryName: '',
+    })),
+  };
+}
+
 // 新增作业组，返回数据库 UUID
 export async function insertWorkGroup(userId, { train, isLinxiu, groupDate }) {
+  // userId 可以是当前用户或目标用户（管理员为他人创建）
   const { data, error } = await supabase
     .from('work_groups')
     .insert({

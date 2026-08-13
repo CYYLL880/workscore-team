@@ -45,7 +45,7 @@ const HEADER_HEIGHT = 44;
 
 function ScoreSheetScreen({ navigation }) {
   const { user, profile, isAdmin } = useAuth();
-  const { createWorkGroup } = useApp();
+  const { createWorkGroup, loadGroupById } = useApp();
 
   // 月份状态（普通用户锁定当月）
   const now = new Date();
@@ -161,16 +161,15 @@ function ScoreSheetScreen({ navigation }) {
     const cell = days[dateStr]?.[targetUserId];
     const groups = cell?.groups || [];
 
-    // 管理员编辑他人作业组：暂不支持（需WorkGroupEditScreen改造），提示
-    if (targetUserId !== user.id) {
-      showAlert('提示', '暂不支持编辑他人作业组，请到该用户账号下修改');
-      return;
-    }
-
     if (groups.length === 0) {
       // 当天无作业组，新建一个（使用用户点击的日期）
       try {
-        const newId = await createWorkGroup({ train: '', isLinxiu: false, groupDate: dateStr });
+        const newId = await createWorkGroup({
+          train: '',
+          isLinxiu: false,
+          groupDate: dateStr,
+          targetUserId: targetUserId !== user.id ? targetUserId : undefined,
+        });
         setDetailModal({ ...detailModal, visible: false });
         navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
       } catch (e) {
@@ -181,6 +180,15 @@ function ScoreSheetScreen({ navigation }) {
 
     if (groups.length === 1) {
       setDetailModal({ ...detailModal, visible: false });
+      // 管理员编辑他人作业组：先加载到本地 state
+      if (targetUserId !== user.id && isAdmin) {
+        try {
+          await loadGroupById(groups[0].id);
+        } catch (e) {
+          showAlert('错误', '加载作业组失败：' + (e.message || e));
+          return;
+        }
+      }
       navigation.navigate('WorkGroupEdit', { groupId: groups[0].id, isNew: false });
       return;
     }
@@ -190,9 +198,19 @@ function ScoreSheetScreen({ navigation }) {
   };
 
   // 选择具体作业组
-  const handlePickGroup = (groupId) => {
+  const handlePickGroup = async (groupId) => {
+    const targetUserId = groupPicker.userId;
     setGroupPicker({ visible: false, groups: [], dateStr: '', userId: '' });
     setDetailModal({ ...detailModal, visible: false });
+    // 管理员编辑他人作业组：先加载到本地 state
+    if (targetUserId !== user.id && isAdmin) {
+      try {
+        await loadGroupById(groupId);
+      } catch (e) {
+        showAlert('错误', '加载作业组失败：' + (e.message || e));
+        return;
+      }
+    }
     navigation.navigate('WorkGroupEdit', { groupId, isNew: false });
   };
 
@@ -222,6 +240,14 @@ function ScoreSheetScreen({ navigation }) {
         }
         return next;
       });
+      // 反馈
+      const targetUser = users.find(u => u.id === targetUserId);
+      const userName = targetUser?.name || '用户';
+      if (currentlyConfirmed) {
+        showAlert('已撤销', `${userName} ${dateStr} 的工分已撤销确认`);
+      } else {
+        showAlert('已确认', `${userName} ${dateStr} 的工分已确认锁定`);
+      }
     } catch (e) {
       showAlert('操作失败', e.message || '操作失败');
     }
@@ -360,7 +386,8 @@ function ScoreSheetScreen({ navigation }) {
     const targetUser = users.find(u => u.id === userId);
     const isSelf = userId === user.id;
     const confirmed = cell?.confirmed;
-    const canEdit = isSelf && (!confirmed || isAdmin);
+    // 管理员可编辑所有人；普通用户只能编辑自己未确认的
+    const canEdit = isAdmin || (isSelf && !confirmed);
 
     return (
       <Modal

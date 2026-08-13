@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { formatScore } from '../utils/outputGenerator';
+import { showAlert, showConfirm } from '../lib/alert';
+import TimeWheelPicker, { generateWorkTimeOptions } from '../components/TimeWheelPicker';
 
 // 主题色变量
 const COLORS = {
@@ -153,6 +155,14 @@ function WorkGroupEditScreen({ navigation, route }) {
       categoryId: category.id,
       categoryName: category.short_name,
       groupId,
+    });
+  };
+
+  // 删除整个作业组
+  const handleDeleteGroup = () => {
+    showConfirm('删除作业组', `确定要删除此作业组吗？\n车号：${trainInput || '无'} · ${group.items.length}个工步`, () => {
+      dispatch({ type: 'DELETE_WORK_GROUP', payload: { groupId } });
+      navigation.goBack();
     });
   };
 
@@ -377,6 +387,13 @@ function WorkGroupEditScreen({ navigation, route }) {
           <Text style={styles.bottomScore}>小计：{formatScore(groupScore)}</Text>
         </View>
         <TouchableOpacity
+          style={styles.deleteGroupBtn}
+          activeOpacity={0.85}
+          onPress={handleDeleteGroup}
+        >
+          <Text style={styles.deleteGroupBtnText}>删除</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={styles.saveBtn}
           activeOpacity={0.85}
           onPress={() => navigation.goBack()}
@@ -435,11 +452,11 @@ function WorkGroupEditScreen({ navigation, route }) {
             <Text style={styles.modalLabel}>快捷选择</Text>
             <View style={styles.quickTimeWrap}>
               {[
-                { label: '上午半天', start: '8:00', end: '12:00' },
-                { label: '下午半天', start: '13:00', end: '17:00' },
-                { label: '全天', start: '8:00', end: '17:00' },
+                { label: '上午半天', start: '8:00', end: '11:40' },
+                { label: '下午半天', start: '13:30', end: '17:30' },
+                { label: '全天', start: '8:00', end: '17:30' },
                 { label: '8:30-10:30', start: '8:30', end: '10:30' },
-                { label: '10:30-12:00', start: '10:30', end: '12:00' },
+                { label: '10:30-11:40', start: '10:30', end: '11:40' },
                 { label: '13:30-15:30', start: '13:30', end: '15:30' },
                 { label: '15:30-17:30', start: '15:30', end: '17:30' },
               ].map((preset) => {
@@ -458,24 +475,26 @@ function WorkGroupEditScreen({ navigation, route }) {
               })}
             </View>
 
-            <Text style={styles.modalLabel}>开始时间（HH:MM）</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="8:30"
-              placeholderTextColor={COLORS.textLight}
-              value={timeModal.start}
-              onChangeText={(t) => setTimeModal({ ...timeModal, start: t })}
-              keyboardType="numeric"
-            />
-            <Text style={styles.modalLabel}>结束时间（HH:MM）</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="10:30"
-              placeholderTextColor={COLORS.textLight}
-              value={timeModal.end}
-              onChangeText={(t) => setTimeModal({ ...timeModal, end: t })}
-              keyboardType="numeric"
-            />
+            {/* 滑动选择器 */}
+            <View style={styles.timePickerRow}>
+              <View style={styles.timePickerCol}>
+                <Text style={styles.timePickerLabel}>开始</Text>
+                <TimeWheelPicker
+                  times={generateWorkTimeOptions()}
+                  selectedValue={timeModal.start}
+                  onSelect={(t) => setTimeModal({ ...timeModal, start: t })}
+                />
+              </View>
+              <View style={styles.timePickerCol}>
+                <Text style={styles.timePickerLabel}>结束</Text>
+                <TimeWheelPicker
+                  times={generateWorkTimeOptions()}
+                  selectedValue={timeModal.end}
+                  onSelect={(t) => setTimeModal({ ...timeModal, end: t })}
+                />
+              </View>
+            </View>
+
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalCancel]}
@@ -975,6 +994,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  deleteGroupBtn: {
+    backgroundColor: COLORS.danger,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  deleteGroupBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   // 弹窗通用样式
   modalOverlay: {
@@ -1028,6 +1059,23 @@ const styles = StyleSheet.create({
   quickTimeTextActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  timePickerCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  timePickerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textLight,
+    marginBottom: 8,
   },
   modalInput: {
     borderWidth: 1,
