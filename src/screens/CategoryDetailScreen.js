@@ -38,7 +38,6 @@ function CategoryDetailScreen({ navigation, route }) {
   const category = getCategoryById(categoryId);
   const group = getGroupById(groupId);
   const isLinxiu = group?.isLinxiu || false;
-  const multiplier = isLinxiu ? 1.5 : 1;
 
   const filteredSteps = (() => {
     if (!category) return [];
@@ -97,16 +96,31 @@ function CategoryDetailScreen({ navigation, route }) {
 
   // 渲染已选工步的展开编辑面板
   const renderEditPanel = (item) => {
-    const score = item.score * item.quantity * multiplier;
-    const borderColor = isLinxiu ? COLORS.linxiu : COLORS.accent;
+    const itemMult = item.isLinxiu ? 1.5 : 1;
+    const score = item.score * item.quantity * itemMult;
+    const borderColor = item.isLinxiu ? COLORS.linxiu : COLORS.accent;
+
+    const toggleItemLinxiu = () => {
+      dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq: item.seq, updates: { isLinxiu: !item.isLinxiu } } });
+    };
+
     return (
       <View style={styles.editPanel}>
-        {/* 数量控制 + 工分 */}
+        {/* 数量控制 + 临修开关 + 工分 */}
         <View style={styles.editRow}>
           <QuantityControl
             value={item.quantity}
             onChange={(v) => handleQuantity(item.seq, v)}
           />
+          <TouchableOpacity
+            style={[styles.itemLinxiuBtn, item.isLinxiu && styles.itemLinxiuBtnActive]}
+            onPress={toggleItemLinxiu}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.itemLinxiuBtnText, item.isLinxiu && styles.itemLinxiuBtnTextActive]}>
+              {item.isLinxiu ? '临修 ✓' : '临修'}
+            </Text>
+          </TouchableOpacity>
           <Text style={[styles.editScore, { color: borderColor }]}>{formatScore(score)}分</Text>
           <TouchableOpacity
             style={styles.removeBtn}
@@ -153,7 +167,7 @@ function CategoryDetailScreen({ navigation, route }) {
     const unitText = item.unit ? `每${item.unit}` : '无单位';
     const subInfo = `${unitText} · 工分 ${formatScore(item.score)}`;
     const groupItem = inGroup ? getGroupItem(item.seq) : null;
-    const borderColor = isLinxiu ? COLORS.linxiu : COLORS.accent;
+    const borderColor = groupItem?.isLinxiu ? COLORS.linxiu : COLORS.accent;
 
     return (
       <View style={[styles.stepItem, inGroup && { borderColor: borderColor, backgroundColor: COLORS.accentBg }]}>
@@ -642,6 +656,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flex: 1,
     textAlign: 'center',
+  },
+  itemLinxiuBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginLeft: 6,
+  },
+  itemLinxiuBtnActive: {
+    backgroundColor: COLORS.linxiu,
+    borderColor: COLORS.linxiu,
+  },
+  itemLinxiuBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textLight,
+  },
+  itemLinxiuBtnTextActive: {
+    color: '#ffffff',
   },
   removeBtn: {
     backgroundColor: '#fee2e2',

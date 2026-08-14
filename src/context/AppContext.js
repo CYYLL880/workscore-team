@@ -53,9 +53,15 @@ function appReducer(state, action) {
       const { groupId, updates } = action.payload;
       return {
         ...state,
-        workGroups: state.workGroups.map(g =>
-          g.id === groupId ? { ...g, ...updates } : g
-        ),
+        workGroups: state.workGroups.map(g => {
+          if (g.id !== groupId) return g;
+          const newGroup = { ...g, ...updates };
+          // 切换临修状态时同步所有工步
+          if (updates.isLinxiu !== undefined) {
+            newGroup.items = g.items.map(it => ({ ...it, isLinxiu: updates.isLinxiu }));
+          }
+          return newGroup;
+        }),
       };
     }
 
@@ -83,6 +89,7 @@ function appReducer(state, action) {
             quantity: 1,
             timeRange: '',
             bianhao: '',
+            isLinxiu: false,
           };
           return { ...g, items: [...g.items, newItem] };
         }),
@@ -351,9 +358,8 @@ export function AppProvider({ children }) {
   // 计算单个作业组的工分
   const getGroupScore = useCallback((group) => {
     if (!group) return 0;
-    const multiplier = group.isLinxiu ? 1.5 : 1;
     return group.items.reduce(
-      (sum, item) => sum + item.score * item.quantity * multiplier,
+      (sum, item) => sum + item.score * item.quantity * (item.isLinxiu ? 1.5 : 1),
       0
     );
   }, []);
@@ -442,6 +448,15 @@ export function AppProvider({ children }) {
           case 'UPDATE_WORK_GROUP': {
             const { groupId, updates } = action.payload;
             await dbUpdateWorkGroup(groupId, updates);
+            // 切换临修状态时同步更新所有工步
+            if (updates.isLinxiu !== undefined) {
+              const group = stateRef.current.workGroups.find(g => g.id === groupId);
+              if (group) {
+                await Promise.all(
+                  group.items.map(it => dbUpdateWorkItem(groupId, it.seq, { isLinxiu: updates.isLinxiu }))
+                );
+              }
+            }
             break;
           }
           case 'DELETE_WORK_GROUP': {
@@ -462,6 +477,7 @@ export function AppProvider({ children }) {
               timeRange: '',
               bianhao: '',
               categoryId: category?.id ?? null,
+              isLinxiu: false,
             };
             await dbInsertWorkItem(groupId, ownerUserId, item);
             break;
@@ -486,6 +502,7 @@ export function AppProvider({ children }) {
                 timeRange: it.timeRange || '',
                 bianhao: it.bianhao || '',
                 categoryId: it.categoryId ?? null,
+                isLinxiu: !!it.isLinxiu,
               });
             }
             break;

@@ -506,14 +506,12 @@ function ScoreSheetScreen({ navigation }) {
             <ScrollView style={styles.detailScroll} showsVerticalScrollIndicator={false}>
               {cell?.groups?.length ? (
                 cell.groups.map((g, gi) => {
-                  const multiplier = g.isLinxiu ? 1.5 : 1;
-                  const groupTotal = (g.items || []).reduce((s, it) => s + it.score * it.quantity * multiplier, 0);
+                  const groupTotal = (g.items || []).reduce((s, it) => s + it.score * it.quantity * (it.isLinxiu ? 1.5 : 1), 0);
                   return (
                     <View key={gi} style={styles.groupBlock}>
                       <View style={styles.groupHeader}>
                         <Text style={styles.groupTrainText}>
                           {g.train || '无车号'}
-                          {g.isLinxiu && <Text style={styles.linxiuTag}> · 临修×1.5</Text>}
                         </Text>
                         <View style={styles.groupHeaderRight}>
                           <Text style={styles.groupScoreText}>{formatScore(groupTotal)}分</Text>
@@ -529,7 +527,7 @@ function ScoreSheetScreen({ navigation }) {
                       </View>
                       {g.items?.length ? (
                         g.items.map((it, ii) => {
-                          const sub = it.score * it.quantity * multiplier;
+                          const sub = it.score * it.quantity * (it.isLinxiu ? 1.5 : 1);
                           return (
                             <View key={ii} style={styles.itemRow}>
                               <View style={styles.itemLeft}>
@@ -551,7 +549,7 @@ function ScoreSheetScreen({ navigation }) {
                                   </View>
                                 </View>
                               </View>
-                              <Text style={styles.itemScore}>{formatScore(sub)}</Text>
+                              <Text style={styles.itemScore}>{formatScore(sub)}{it.isLinxiu ? ' 临修' : ''}</Text>
                             </View>
                           );
                         })

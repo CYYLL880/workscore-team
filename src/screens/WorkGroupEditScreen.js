@@ -87,7 +87,6 @@ function WorkGroupEditScreen({ navigation, route }) {
   }
 
   const isLinxiu = group.isLinxiu;
-  const multiplier = isLinxiu ? 1.5 : 1;
   const groupScore = getGroupScore(group);
 
   // 车号输入变化时同步到全局
@@ -295,13 +294,18 @@ function WorkGroupEditScreen({ navigation, route }) {
 
   // 渲染已选工步项
   const renderItem = ({ item }) => {
-    const score = item.score * item.quantity * multiplier;
+    const itemMult = item.isLinxiu ? 1.5 : 1;
+    const score = item.score * item.quantity * itemMult;
     const displayContent = item.content || item.name;
-    const borderColor = isLinxiu ? COLORS.accent : COLORS.primary;
+    const borderColor = item.isLinxiu ? COLORS.accent : COLORS.primary;
+
+    const toggleItemLinxiu = () => {
+      dispatch({ type: 'UPDATE_GROUP_ITEM', payload: { groupId, seq: item.seq, updates: { isLinxiu: !item.isLinxiu } } });
+    };
 
     return (
       <View style={[styles.cartItem, { borderLeftColor: borderColor }]}>
-        {/* 顶部行：序号 + 内容(可编辑) + 删除 */}
+        {/* 顶部行：序号 + 内容(可编辑) + 临修标签 + 删除 */}
         <View style={styles.itemTop}>
           <View style={[styles.seqTag, { backgroundColor: borderColor }]}>
             <Text style={styles.seqText}>{item.seq}</Text>
@@ -309,6 +313,11 @@ function WorkGroupEditScreen({ navigation, route }) {
           <TouchableOpacity style={styles.contentBtn} onPress={() => openContentModal(item)} activeOpacity={0.7}>
             <Text style={styles.itemName} numberOfLines={2}>{displayContent}</Text>
           </TouchableOpacity>
+          {item.isLinxiu && (
+            <TouchableOpacity style={styles.linxiuTagBtn} onPress={toggleItemLinxiu}>
+              <Text style={styles.linxiuTagText}>临修×1.5</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             onPress={() => handleRemoveItem(item.seq)}
@@ -317,12 +326,21 @@ function WorkGroupEditScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* 底部行：数量控制 + 工分 */}
+        {/* 底部行：数量控制 + 临修开关 + 工分 */}
         <View style={styles.itemBottom}>
           <QuantityControl
             value={item.quantity}
             onChange={(v) => handleQuantity(item.seq, v)}
           />
+          <TouchableOpacity
+            style={[styles.itemLinxiuBtn, item.isLinxiu && styles.itemLinxiuBtnActive]}
+            onPress={toggleItemLinxiu}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.itemLinxiuBtnText, item.isLinxiu && styles.itemLinxiuBtnTextActive]}>
+              {item.isLinxiu ? '临修 ✓' : '临修'}
+            </Text>
+          </TouchableOpacity>
           <Text style={styles.scoreText}>{formatScore(score)}分</Text>
         </View>
 
@@ -512,7 +530,7 @@ function WorkGroupEditScreen({ navigation, route }) {
       <View style={styles.bottomBar}>
         <View style={styles.bottomInfo}>
           <Text style={styles.bottomCount}>
-            {group.items.length} 项{isLinxiu ? ' · 临修×1.5' : ''}
+            {group.items.length} 项{group.items.some(it => it.isLinxiu) ? ' · 含临修' : ''}
           </Text>
           <Text style={styles.bottomScore}>小计：{formatScore(groupScore)}</Text>
         </View>
@@ -1190,8 +1208,41 @@ const styles = StyleSheet.create({
   },
   scoreText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     color: COLORS.accent,
+  },
+  linxiuTagBtn: {
+    backgroundColor: '#fff7ed',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginLeft: 4,
+  },
+  linxiuTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.linxiu,
+  },
+  itemLinxiuBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: COLORS.bg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginLeft: 6,
+  },
+  itemLinxiuBtnActive: {
+    backgroundColor: COLORS.linxiu,
+    borderColor: COLORS.linxiu,
+  },
+  itemLinxiuBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textLight,
+  },
+  itemLinxiuBtnTextActive: {
+    color: '#ffffff',
   },
   timeRow: {
     marginTop: 10,

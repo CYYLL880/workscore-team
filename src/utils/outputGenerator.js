@@ -20,7 +20,6 @@ function formatTime(timeRange) {
 function generateGroupText(group) {
   if (!group || !group.items || group.items.length === 0) return '';
 
-  const isLinxiu = group.isLinxiu;
   const train = group.train || '';
   const lines = [];
 
@@ -34,7 +33,7 @@ function generateGroupText(group) {
     const daySeq = index + 1;
     const content = item.content || item.name;
     const qty = item.quantity;
-    const unit = item.unit || '';
+    const isLinxiu = !!item.isLinxiu;
 
     // 序号、（工步序号*数量）
     let line = `${daySeq}、（${item.seq}*`;
@@ -103,9 +102,8 @@ export function formatScore(score) {
  */
 export function calculateGroupScore(group) {
   if (!group) return 0;
-  const multiplier = group.isLinxiu ? 1.5 : 1;
   return group.items.reduce(
-    (sum, item) => sum + item.score * item.quantity * multiplier,
+    (sum, item) => sum + item.score * item.quantity * (item.isLinxiu ? 1.5 : 1),
     0
   );
 }

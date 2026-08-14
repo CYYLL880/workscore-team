@@ -165,6 +165,7 @@ export async function fetchWorkGroups(userId) {
       timeRange: it.time_range || '',
       bianhao: it.bianhao || '',
       categoryId: it.category_id ?? null,
+      isLinxiu: !!it.is_linxiu,
       categoryName: '', // 由 AppContext 加载后填充
     });
   });
@@ -202,6 +203,7 @@ export async function fetchGroupById(groupId) {
       timeRange: it.time_range || '',
       bianhao: it.bianhao || '',
       categoryId: it.category_id ?? null,
+      isLinxiu: !!it.is_linxiu,
       categoryName: '',
     })),
   };
@@ -257,6 +259,7 @@ export async function insertWorkItem(groupId, userId, item) {
     time_range: item.timeRange || null,
     bianhao: item.bianhao || null,
     category_id: item.categoryId ?? null,
+    is_linxiu: !!item.isLinxiu,
   });
   if (error) throw error;
 }
@@ -271,6 +274,7 @@ export async function updateWorkItem(groupId, seq, updates) {
   if (updates.name !== undefined) patch.name = updates.name;
   if (updates.score !== undefined) patch.score = updates.score;
   if (updates.unit !== undefined) patch.unit = updates.unit || null;
+  if (updates.isLinxiu !== undefined) patch.is_linxiu = !!updates.isLinxiu;
   if (Object.keys(patch).length === 0) return;
 
   const { error } = await supabase
@@ -367,8 +371,9 @@ export async function fetchMonthScoreData(year, month) {
       timeRange: it.time_range || '',
       bianhao: it.bianhao || '',
       categoryId: it.category_id ?? null,
+      isLinxiu: !!it.is_linxiu,
     }));
-    const groupScore = groupItems.reduce((s, it) => s + it.score * it.quantity * (g.is_linxiu ? 1.5 : 1), 0);
+    const groupScore = groupItems.reduce((s, it) => s + it.score * it.quantity * (it.isLinxiu ? 1.5 : 1), 0);
     if (!days[dateKey][g.user_id]) {
       days[dateKey][g.user_id] = { score: 0, groupCount: 0, confirmed: true, groups: [] };
     }
@@ -525,14 +530,13 @@ export function buildMonthExcelSheets(users, days, year, month) {
       const cell = day[u.id];
       if (!cell || !cell.groups || cell.groups.length === 0) return;
       cell.groups.forEach(g => {
-        const multiplier = g.isLinxiu ? 1.5 : 1;
         const trainLabel = g.train || '无';
-        const linxiuTag = g.isLinxiu ? ' [临修×1.5]' : '';
         if (!g.items || g.items.length === 0) {
-          rows.push([u.emp_no, u.name, `${trainLabel}${linxiuTag}`, '', '', '', '', '', '', '']);
+          rows.push([u.emp_no, u.name, trainLabel, '', '', '', '', '', '', '']);
         } else {
           g.items.forEach(it => {
-            const subtotal = it.score * it.quantity * multiplier;
+            const subtotal = it.score * it.quantity * (it.isLinxiu ? 1.5 : 1);
+            const linxiuTag = it.isLinxiu ? ' [临修×1.5]' : '';
             rows.push([
               u.emp_no,
               u.name,
