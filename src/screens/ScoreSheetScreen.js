@@ -164,6 +164,36 @@ function ScoreSheetScreen({ navigation }) {
     setDetailModal({ visible: true, userId, dateStr, dayNum, cell });
   };
 
+  // 编辑单个作业组（直接从详情 Modal 点编辑按钮）
+  const handleEditSingleGroup = async (groupId, targetUserId) => {
+    setDetailModal({ ...detailModal, visible: false });
+    if (targetUserId !== user.id && isAdmin) {
+      try {
+        await loadGroupById(groupId);
+      } catch (e) {
+        showAlert('错误', '加载作业组失败：' + (e.message || e));
+        return;
+      }
+    }
+    navigation.navigate('WorkGroupEdit', { groupId, isNew: false });
+  };
+
+  // 新建当天作业组（用于同一天多个车号）
+  const handleAddNewGroup = async (targetUserId, dateStr) => {
+    try {
+      const newId = await createWorkGroup({
+        train: '',
+        isLinxiu: false,
+        groupDate: dateStr,
+        targetUserId: targetUserId !== user.id ? targetUserId : undefined,
+      });
+      setDetailModal({ ...detailModal, visible: false });
+      navigation.navigate('WorkGroupEdit', { groupId: newId, isNew: true });
+    } catch (e) {
+      showAlert('错误', '创建作业组失败：' + (e.message || e));
+    }
+  };
+
   // 进入作业组编辑（自己 + 未确认，或管理员）
   const handleEditGroups = async (targetUserId, dateStr) => {
     const cell = days[dateStr]?.[targetUserId];
@@ -485,7 +515,17 @@ function ScoreSheetScreen({ navigation }) {
                           {g.train || '无车号'}
                           {g.isLinxiu && <Text style={styles.linxiuTag}> · 临修×1.5</Text>}
                         </Text>
-                        <Text style={styles.groupScoreText}>{formatScore(groupTotal)}分</Text>
+                        <View style={styles.groupHeaderRight}>
+                          <Text style={styles.groupScoreText}>{formatScore(groupTotal)}分</Text>
+                          {canEdit && (
+                            <TouchableOpacity
+                              style={styles.groupEditBtn}
+                              onPress={() => handleEditSingleGroup(g.id, userId)}
+                            >
+                              <Text style={styles.groupEditBtnText}>编辑</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                       {g.items?.length ? (
                         g.items.map((it, ii) => {
@@ -534,10 +574,10 @@ function ScoreSheetScreen({ navigation }) {
               {canEdit && (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.editBtn]}
-                  onPress={() => handleEditGroups(userId, dateStr)}
+                  onPress={() => handleAddNewGroup(userId, dateStr)}
                 >
                   <Text style={styles.editBtnText}>
-                    {cell?.groups?.length ? '编辑作业组' : '新建作业组'}
+                    {cell?.groups?.length ? '+ 添加作业组' : '新建作业组'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1186,6 +1226,22 @@ const styles = StyleSheet.create({
   groupScoreText: {
     fontSize: 13,
     fontWeight: '800',
+    color: COLORS.accent,
+  },
+  groupHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  groupEditBtn: {
+    backgroundColor: COLORS.accentBg,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  groupEditBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: COLORS.accent,
   },
   itemRow: {
